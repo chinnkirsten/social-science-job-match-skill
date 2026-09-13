@@ -60,4 +60,4 @@ python3 -B -m unittest discover -s scripts -p 'test_*.py'
 
 汇总输出只写入新文件，拒绝覆盖输入或已有结果。测试可使用--as-of指定带时区时刻；真实交付使用当前时间。退出0仅表示结构检查通过，退出1为数据错误，退出2为文件读写错误。检查不联网，也不证明雇主身份、原文真实性或改写语义。
 
-数据通过后还需按report-standard.md核对Word内容、无底纹、可点击链接和逐页渲染。当前仓库没有自动Word生成器，不能把JSON校验描述为完整报告流水线实测。
+数据通过后使用`run_job_match.py report`或经人工复核的`finalize`生成Word，再按report-standard.md核对内容、无底纹、可点击链接和逐页渲染。`evidence_ok`区分事实结构问题与公司数不足；只有数量不足可以使用阶段报告，不能绕过证据闸。自动生成成功返回`render_pending`，不代表视觉验收或真实求职效果实测。

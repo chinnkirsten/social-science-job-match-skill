@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "3.0",
   "verified_at": "2026-09-13",
   "components": [
     {
@@ -16,7 +16,10 @@
       "input": "occupation or skill query",
       "output": "versioned occupation and skill references",
       "trust_boundary": "US benchmark only; never proves a Chinese JD requirement or vacancy status",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_data.py",
+      "contract_test": "tests/test_data_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "esco",
@@ -32,7 +35,10 @@
       "input": "occupation or skill phrase",
       "output": "versioned ESCO URI and labels",
       "trust_boundary": "European taxonomy without official Chinese labels; preserve original Chinese JD wording",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_data.py",
+      "contract_test": "tests/test_data_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "docling",
@@ -42,13 +48,16 @@
       "pin_type": "commit",
       "pin": "5ea6490ffdc57b2fd7de5cc436f2d0a22f2214d4",
       "license": "MIT; model licenses vary",
-      "status": "planned_adapter",
+      "status": "optional_adapter",
       "default_enabled": false,
       "role": "local PDF, DOCX, HTML, table and layout parsing",
       "input": "local candidate document or JD file",
       "output": "structured JSON or Markdown for evidence extraction",
       "trust_boundary": "parser output must be checked against the original document; keep private files local",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_services.py",
+      "contract_test": "tests/test_service_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "crawl4ai",
@@ -58,13 +67,16 @@
       "pin_type": "commit",
       "pin": "862f6bccb9c063f49b9d42701baa0eea17a4993f",
       "license": "Apache-2.0",
-      "status": "planned_adapter",
+      "status": "optional_adapter",
       "default_enabled": false,
       "role": "public official-page extraction to Markdown or structured records",
       "input": "allowed public URL",
       "output": "page content, metadata and extraction status",
       "trust_boundary": "respect site terms and robots; no login, paywall or anti-bot bypass; pin security-reviewed releases",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_services.py",
+      "contract_test": "tests/test_service_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "tabiya_open_dataset",
@@ -80,7 +92,10 @@
       "input": "ESCO-derived CSV package",
       "output": "skills, occupations and relation tables",
       "trust_boundary": "contains ESCO 1.1.1 and is older than the baseline ESCO release",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_data.py",
+      "contract_test": "tests/test_data_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "tabiya_livelihoods_classifier",
@@ -96,7 +111,10 @@
       "input": "job description text",
       "output": "candidate ESCO-linked entities with model trace",
       "trust_boundary": "requires model access and human review; classification is not eligibility evidence",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_services.py",
+      "contract_test": "tests/test_service_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "esco_skill_extractor",
@@ -112,7 +130,10 @@
       "input": "job description text",
       "output": "occupation candidates and linked skill candidates",
       "trust_boundary": "LLM and embedding outputs are suggestions; preserve phrases and review mappings",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_services.py",
+      "contract_test": "tests/test_service_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "tabiya_compass",
@@ -122,13 +143,16 @@
       "pin_type": "commit",
       "pin": "8470bea7f68d0990898f441a12bbb6a261a0ef34",
       "license": "MIT",
-      "status": "pattern_only",
+      "status": "optional_adapter",
       "default_enabled": false,
       "role": "guided discovery of skills from formal and informal experience",
       "input": "candidate-confirmed experience narrative",
       "output": "candidate skill claims awaiting evidence confirmation",
       "trust_boundary": "never turn conversational inference into resume fact without user confirmation",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_services.py",
+      "contract_test": "tests/test_service_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "resume_matcher",
@@ -138,13 +162,16 @@
       "pin_type": "commit",
       "pin": "ab2b370d1fb98d9272f71b8d6e54a9c51ac75110",
       "license": "Apache-2.0",
-      "status": "pattern_only",
+      "status": "optional_adapter",
       "default_enabled": false,
       "role": "JD gap analysis and resume-tailoring interaction pattern",
       "input": "candidate evidence and job description",
       "output": "keyword, gap and rewrite suggestions",
       "trust_boundary": "similarity is not employment probability; every rewrite needs evidence references",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_services.py",
+      "contract_test": "tests/test_service_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "jobspy",
@@ -160,7 +187,10 @@
       "input": "search terms and geography",
       "output": "unverified job leads",
       "trust_boundary": "do not collect contact details or evade blocks; return to official JD before selection",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_services.py",
+      "contract_test": "tests/test_service_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "melo_benchmark",
@@ -176,7 +206,10 @@
       "input": "occupation mapping predictions",
       "output": "reproducible evaluation metrics",
       "trust_boundary": "benchmark performance does not prove Chinese-market accuracy",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_data.py",
+      "contract_test": "tests/test_data_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     },
     {
       "id": "tgre_classification",
@@ -192,7 +225,10 @@
       "input": "occupation or skill prediction",
       "output": "ranked taxonomy candidates and raw trace",
       "trust_boundary": "research evaluation only; not vacancy or eligibility evidence",
-      "integration_state": "documented_only"
+      "integration_state": "adapter_implemented",
+      "adapter_entrypoint": "scripts/jobmatch_runtime/adapters_data.py",
+      "contract_test": "tests/test_data_adapters.py",
+      "verification_record": "integrations/runtime-verification.json"
     }
   ]
 }

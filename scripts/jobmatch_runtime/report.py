@@ -1,0 +1,429 @@
+"""Evidence-gated, local-only Word export. No visual-review claim is made."""
+from datetime import datetime, timezone
+from io import BytesIO
+import os
+from pathlib import Path
+import tempfile
+from xml.etree import ElementTree as ET
+from zipfile import ZipFile
+
+from validate_jobs import validate
+
+
+MODE_FIELDS = {
+    'internship': ('earliest_start', 'days_per_week', 'duration_months'),
+    'campus_full_time': ('graduation_cohort', 'recruitment_batch', 'graduate_eligibility'),
+    'experienced_full_time': ('experience_requirement', 'earliest_start'),
+}
+LABELS = {
+    'internship': '实习', 'campus_full_time': '校招全职',
+    'experienced_full_time': '社招全职', 'earliest_start': '最早到岗',
+    'days_per_week': '每周天数', 'duration_months': '持续月数',
+    'graduation_cohort': '毕业届别', 'recruitment_batch': '招聘批次',
+    'graduate_eligibility': '应届资格', 'experience_requirement': '工作年限要求',
+    'ready': '可使用（已核对原证据）', 'verify_first': '需先核实，不可直接使用',
+    'create_first': '需先完成，不可写成已有经历',
+}
+
+
+def _filled(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _strings(value):
+    return isinstance(value, list) and bool(value) and all(_filled(x) for x in value)
+
+
+def _extensions(data, stage=False):
+    """Validate presentation content separately from the factual gate."""
+    errors = []
+    if not _filled(data.get('report_summary')):
+        errors.append('report_summary must be a non-empty string')
+    selected = {j['id'] for j in data['jobs'] if j.get('selected') is True
+                or (stage and j.get('proposed_selection') is True)}
+    variants = data.get('resume_variants')
+    ids, covered = {}, set()
+    if not isinstance(variants, list) or not variants:
+        errors.append('resume_variants must be a non-empty list')
+        variants = []
+    if len(variants) > 3:
+        errors.append('Consolidate resume_variants into at most three evidence-based structures')
+    for index, item in enumerate(variants):
+        prefix = f'resume_variants[{index}]'
+        if not isinstance(item, dict):
+            errors.append(prefix + ' must be an object')
+            continue
+        if not all(_filled(item.get(k)) for k in ('id', 'name')):
+            errors.append(prefix + ' requires id and name')
+        if not _strings(item.get('changes')):
+            errors.append(prefix + ' requires concrete changes')
+        if not _strings(item.get('job_ids')) or not set(item['job_ids']) <= selected:
+            errors.append(prefix + ' requires selected job_ids')
+        else:
+            covered.update(item['job_ids'])
+        if _filled(item.get('id')):
+            if item['id'] in ids:
+                errors.append(prefix + ' duplicate variant id')
+            ids[item['id']] = item
+    if covered != selected:
+        errors.append('resume_variants must cover every selected job')
+    actions = data.get('action_plan')
+    if not isinstance(actions, list) or not actions:
+        errors.append('action_plan must be a non-empty list')
+        actions = []
+    covered = set()
+    for index, item in enumerate(actions):
+        prefix = f'action_plan[{index}]'
+        if not isinstance(item, dict):
+            errors.append(prefix + ' must be an object')
+            continue
+        job_id, variant_id = item.get('job_id'), item.get('resume_variant_id')
+        if not isinstance(job_id, str) or job_id not in selected:
+            errors.append(prefix + ' job_id must identify a selected job')
+        else:
+            covered.add(job_id)
+        if not _filled(item.get('action')) or not _strings(item.get('materials')):
+            errors.append(prefix + ' requires action and materials')
+        if not isinstance(variant_id, str) or variant_id not in ids:
+            errors.append(prefix + ' requires an existing resume_variant_id')
+        elif not _strings(ids[variant_id].get('job_ids')) or job_id not in ids[variant_id]['job_ids']:
+            errors.append(prefix + ' variant does not cover this job')
+    if covered != selected:
+        errors.append('action_plan must cover every selected job')
+    for job in data['jobs']:
+        if job['id'] not in selected:
+            continue
+        details = job.get('details')
+        if not isinstance(details, dict):
+            errors.append(f"{job['id']}: details missing")
+            continue
+        for field in ('salary', 'deadline'):
+            if not _filled(details.get(field)):
+                errors.append(f"{job['id']}: details.{field} missing; explicitly state undisclosed if needed")
+        fields = details.get('mode_fields')
+        for field in MODE_FIELDS[data['employment_mode']]:
+            if not isinstance(fields, dict) or not _filled(fields.get(field)):
+                errors.append(f"{job['id']}: details.mode_fields.{field} missing")
+    return errors
+
+
+def _inspect(path):
+    ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+    with ZipFile(path) as archive:
+        if archive.testzip():
+            raise ValueError('Word ZIP integrity failure')
+        root = ET.fromstring(archive.read('word/document.xml'))
+        if root.findall('.//w:shd', ns):
+            raise ValueError('Word contains forbidden shading')
+        for name in archive.namelist():
+            if name.startswith('word/') and name.endswith('.xml'):
+                tree = ET.fromstring(archive.read(name))
+                for color in tree.findall('.//w:color', ns):
+                    if color.get('{%s}val' % ns['w']) not in ('000000', 'auto'):
+                        raise ValueError('Word contains non-black text')
+        if not root.findall('.//w:bookmarkStart', ns):
+            raise ValueError('Word navigation bookmarks missing')
+    return {'ooxml_valid': True, 'visual_review': 'pending'}
+
+
+def _monochrome(path):
+    """Also clean the template's unused stylesWithEffects/numbering defaults."""
+    from lxml import etree
+    namespace = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    with ZipFile(path) as archive:
+        entries = [(entry, archive.read(entry.filename)) for entry in archive.infolist()]
+    buffer = BytesIO()
+    with ZipFile(buffer, 'w') as archive:
+        for entry, content in entries:
+            if entry.filename.startswith('word/') and entry.filename.endswith('.xml'):
+                tree = etree.fromstring(content)
+                for shade in tree.iter('{%s}shd' % namespace):
+                    shade.getparent().remove(shade)
+                for border in list(tree.iter('{%s}pBdr' % namespace)):
+                    border.getparent().remove(border)
+                for color in tree.iter('{%s}color' % namespace):
+                    color.attrib.clear()
+                    color.set('{%s}val' % namespace, '000000')
+                content = etree.tostring(tree, encoding='UTF-8', xml_declaration=True, standalone=True)
+            archive.writestr(entry, content)
+    Path(path).write_bytes(buffer.getvalue())
+
+
+def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
+    """Write a new DOCX, never overwrite. Validation failures return diagnostics.
+
+    Additional formal fields: report_summary (string), resume_variants
+    [{id,name,job_ids,changes}], action_plan
+    [{job_id,action,materials,resume_variant_id}], and selected jobs' details
+    {salary,deadline,mode_fields}. MODE_FIELDS defines mode-specific keys.
+    A stage export may omit presentation fields but cannot bypass evidence errors.
+    A successful export remains render_pending until external visual review.
+    """
+    output = Path(output)
+    if output.suffix.lower() != '.docx':
+        return {'ok': False, 'status': 'blocked', 'errors': ['output must have .docx extension']}
+    if output.exists() or output.is_symlink():
+        return {'ok': False, 'status': 'blocked', 'errors': ['output already exists; overwrite forbidden']}
+    try:
+        checked = validate(data, now)
+    except (TypeError, ValueError, KeyError) as exc:
+        return {'ok': False, 'status': 'blocked', 'errors': ['invalid input structure: ' + str(exc)]}
+    if not checked.get('evidence_ok', checked['ok']) or (not stage and not checked['ok']):
+        return {'ok': False, 'status': 'blocked', 'errors': checked['errors'], 'validation': checked}
+    missing = _extensions(data, stage)
+    if missing and not stage:
+        return {'ok': False, 'status': 'blocked', 'errors': missing, 'validation': checked}
+    try:
+        from docx import Document
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        from docx.shared import Cm, Pt, RGBColor
+        from docx.opc.constants import RELATIONSHIP_TYPE as RT
+    except ImportError:
+        return {'ok': False, 'status': 'blocked', 'errors': ['Install report extra: python-docx is required']}
+
+    document = Document()
+    section = document.sections[0]
+    section.page_width, section.page_height = Cm(21), Cm(29.7)
+    section.top_margin = section.bottom_margin = Cm(2)
+    section.left_margin = section.right_margin = Cm(2)
+    document.core_properties.author = 'Job Match Skill'
+    document.core_properties.title = '求职岗位与简历调整报告'
+    document.core_properties.subject = '证据核查报告；结构检查通过，视觉验收待完成'
+    for style in document.styles:
+        if style.type == 1 or style.type == 2:
+            style.font.name = 'Arial'
+            style.font.size = Pt(12)
+            style.font.color.rgb = RGBColor(0, 0, 0)
+            if style.element.rPr is not None:
+                fonts = style.element.rPr.rFonts
+                if fonts is not None:
+                    fonts.set(qn('w:eastAsia'), '宋体')
+        for node in list(style.element.iter(qn('w:shd'))):
+            node.getparent().remove(node)
+        for node in list(style.element.iter(qn('w:color'))):
+            node.attrib.clear()
+            node.set(qn('w:val'), '000000')
+    document.styles['Normal'].paragraph_format.space_after = Pt(6)
+    document.styles['Normal'].paragraph_format.line_spacing = 1.3
+    for name, size in [('Title', 22), ('Heading 1', 17), ('Heading 2', 14), ('Heading 3', 12)]:
+        document.styles[name].font.size = Pt(size)
+        document.styles[name].font.bold = True
+    footer = section.footer.paragraphs[0]
+    footer.add_run('第 ')
+    field = OxmlElement('w:fldSimple'); field.set(qn('w:instr'), 'PAGE')
+    footer._p.append(field)
+    footer.add_run(' 页 · 视觉验收待完成')
+
+    def paragraph(text, style=None):
+        return document.add_paragraph(str(text), style)
+
+    def link(p, text, destination=None, anchor=None):
+        element = OxmlElement('w:hyperlink')
+        if destination:
+            element.set(qn('r:id'), p.part.relate_to(destination, RT.HYPERLINK, is_external=True))
+        if anchor:
+            element.set(qn('w:anchor'), anchor)
+        run = OxmlElement('w:r'); props = OxmlElement('w:rPr')
+        color = OxmlElement('w:color'); color.set(qn('w:val'), '000000'); props.append(color)
+        size = OxmlElement('w:sz'); size.set(qn('w:val'), '24'); props.append(size)
+        underline = OxmlElement('w:u'); underline.set(qn('w:val'), 'single'); props.append(underline)
+        run.append(props); node = OxmlElement('w:t'); node.text = str(text); run.append(node)
+        element.append(run); p._p.append(element)
+
+    bookmark_counter = 0
+
+    def heading(text, anchor, level=1):
+        nonlocal bookmark_counter
+        bookmark_counter += 1
+        p = document.add_heading(text, level)
+        start = OxmlElement('w:bookmarkStart')
+        start.set(qn('w:id'), str(bookmark_counter)); start.set(qn('w:name'), anchor)
+        end = OxmlElement('w:bookmarkEnd'); end.set(qn('w:id'), str(bookmark_counter))
+        p._p.insert(0, start); p._p.append(end)
+
+    def table(headers, rows):
+        tab = document.add_table(rows=1, cols=len(headers))
+        tab.autofit = False
+        widths = [17 / len(headers)] * len(headers)
+        for column, width in zip(tab.columns, widths):
+            column.width = Cm(width)
+        for cell, value in zip(tab.rows[0].cells, headers):
+            cell.text = str(value)
+        repeat = OxmlElement('w:tblHeader'); tab.rows[0]._tr.get_or_add_trPr().append(repeat)
+        for row in rows:
+            for cell, value in zip(tab.add_row().cells, row):
+                cell.text = str(value)
+        for row in tab.rows:
+            for cell, width in zip(row.cells, widths):
+                cell.width = Cm(width)
+                for p in cell.paragraphs:
+                    for run in p.runs:
+                        run.font.size = Pt(10.5)
+                        run.font.color.rgb = RGBColor(0, 0, 0)
+        borders = OxmlElement('w:tblBorders')
+        for side in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+            edge = OxmlElement('w:' + side)
+            for key, value in [('val', 'single'), ('sz', '4'), ('color', '000000')]:
+                edge.set(qn('w:' + key), value)
+            borders.append(edge)
+        tab._tbl.tblPr.append(borders)
+        return tab
+
+    ledger = {item['id']: item for item in data['corpus']['candidate_evidence']}
+    corpus = {item['corpus_id']: item for item in data['corpus']['records']}
+
+    def refs(items):
+        return '\n'.join(f"{ref}: {ledger[ref]['source_id']} / {ledger[ref]['locator']} / "
+                         f"{ledger[ref]['state']} / confirmed={ledger[ref]['confirmed']}" for ref in items)
+
+    selected = [job for job in data['jobs'] if job.get('selected')]
+    proposed = [job for job in data['jobs'] if stage and data.get('runtime_version') is not None and not job.get('selected')
+                and job.get('proposed_selection') is True]
+    detailed = selected + proposed
+    paragraph('求职岗位与简历调整报告', 'Title')
+    paragraph('阶段稿' if stage else '完整数据稿')
+    paragraph('本文件由程序生成，结构检查不等于事实认证；视觉验收待完成。')
+    if data.get('synthetic') is True:
+        paragraph('模拟测试数据，仅用于软件验证；不代表真实候选人或可投岗位。')
+    paragraph(f"招聘模式：{LABELS[data['employment_mode']]}；地区：{data['corpus']['geography']}")
+    paragraph(f"生成时间：{(now or datetime.now(timezone.utc)).isoformat()}")
+    paragraph(f"主清单：{checked['companies']} 家 / 目标 {checked['target']} 家；{len(selected)} 个岗位。")
+    if proposed:
+        paragraph(f'机器分析草稿／未确认可投：另有 {len(proposed)} 个待人工复核岗位，不计入已确认主清单。')
+    sections = [('报告摘要', 'summary'), ('样本与来源', 'sources'), ('岗位与逐条调整', 'jobs'),
+                ('简历版本与投递行动', 'actions'), ('待确认及排除记录', 'appendix'), ('简历证据账本', 'ledger')]
+    paragraph('目录', 'Heading 1')
+    for label, anchor in sections:
+        link(paragraph(''), label, anchor=anchor)
+    for index, job in enumerate(detailed):
+        link(paragraph(''), f"{index + 1}. {job['company']} · {job['title']}", anchor=f'job_{index}')
+    heading('报告摘要', 'summary')
+    paragraph(data.get('report_summary') or '摘要尚未提供；本阶段稿不作为完整交付。')
+    action_by_job = {a.get('job_id'): a for a in data.get('action_plan', []) if isinstance(a, dict)}
+    if detailed:
+        paragraph('优先处理的三项（机器草稿仍须先复核）' if stage else '优先处理的三项', 'Heading 2')
+        for job in sorted(detailed, key=lambda j: (j.get('priority') != 'A', j['id']))[:3]:
+            action = action_by_job.get(job['id'], {})
+            paragraph(f"{job['company']} · {job['title']}；简历版本：{action.get('resume_variant_id', '待整理')}")
+            paragraph('下一步：' + str(action.get('action', '先核对来源与资格')))
+            paragraph('材料：' + '；'.join(action.get('materials', []) if _strings(action.get('materials')) else ['待确认']))
+            paragraph('准备量：' + str(action.get('effort_estimate', '未估计，需根据材料缺口确认')))
+    if stage:
+        paragraph('阶段限制：' + '\n'.join(checked['errors'] + missing or ['本次明确按阶段稿导出。']))
+    heading('样本与来源', 'sources')
+    basis = data['evidence_basis']
+    for field in ('method_version', 'corpus_as_of', 'candidate_evidence_count', 'market_corpus_count',
+                  'market_employer_count', 'trend_claim_level'):
+        paragraph(f'{field}: {basis[field]}')
+    paragraph('本批语料仅支持样本观察，不能推断整体市场趋势或个人录用概率。')
+    execution = data.get('execution', {})
+    calls = execution.get('model_calls', [])
+    if calls:
+        paragraph('本轮实际模型调用：' + '、'.join(str(c.get('role', 'unknown')) for c in calls))
+    for adapter in execution.get('adapters', []):
+        paragraph(f"本轮组件：{adapter.get('component_id')}；上游版本：{adapter.get('upstream_version')}；调用于：{adapter.get('invoked_at')}；缓存命中：{adapter.get('cache_hit')}")
+    for source in basis['market_sources']:
+        p = paragraph(f"{source['name']} | {source['source_tier']} | {source['records']} 条 | ")
+        link(p, '来源', source['url'])
+    for taxonomy in basis.get('taxonomies', []):
+        p = paragraph(f"{taxonomy['name']} {taxonomy['version']}：{taxonomy['use']} | ")
+        link(p, '分类体系', taxonomy['url'])
+    heading('岗位与逐条调整', 'jobs')
+    for index, job in enumerate(detailed):
+        heading(f"{index + 1}. {job['company']} · {job['title']}", f'job_{index}', 2)
+        if not job.get('selected'):
+            paragraph('机器分析草稿／未确认可投。以下是待人工复核的分析，不是投递推荐。')
+        row = corpus[job['corpus_id']]
+        paragraph(f"编号：{job['id']}；优先级：{job['priority']}；地点：{' / '.join(row['locations'])}")
+        paragraph(f"状态：{job['status']}；资格：{job['eligibility']}；核查时间：{job['checked_at']}")
+        paragraph(f"来源等级：{job['source_tier']}；开放证据：{job['open_evidence']}")
+        link(paragraph(''), '具体 JD', job['jd_url'])
+        if job.get('apply_url'):
+            link(paragraph(''), '投递入口', job['apply_url'])
+        if job.get('application_method'):
+            paragraph('投递方式：' + job['application_method'])
+        details = job.get('details') if isinstance(job.get('details'), dict) else {}
+        paragraph('薪酬：' + str(details.get('salary', '缺少信息，待补齐')))
+        paragraph('截止时间：' + str(details.get('deadline', '缺少信息，待补齐')))
+        mode_fields = details.get('mode_fields') if isinstance(details.get('mode_fields'), dict) else {}
+        for field in MODE_FIELDS[data['employment_mode']]:
+            paragraph(f"{LABELS[field]}：{mode_fields.get(field, '缺少信息，待补齐')}")
+        paragraph('JD 职责', 'Heading 3')
+        for value in row['responsibilities']:
+            paragraph(value)
+        paragraph('JD 条件与资格核查', 'Heading 3')
+        for requirement in job['requirements']:
+            paragraph(f"{requirement['text']} | {'必需' if requirement['required'] else '优先'} | {requirement['result']}")
+            paragraph('JD 原文：' + requirement['jd_evidence'])
+            paragraph('候选人证据：' + requirement['candidate_evidence'])
+            paragraph(refs(requirement.get('evidence_refs', [])) or '无已确认的简历证据引用。')
+        paragraph('逐项要求对照', 'Heading 3')
+        for mapping in job['mappings']:
+            table(['字段', '核查内容'], [('岗位要求', mapping['requirement']), ('简历证据', mapping['resume_evidence']),
+                  ('证据定位', refs(mapping.get('evidence_refs', [])) or '未引用候选人事实'),
+                  ('差距', mapping['gap']), ('调整动作', mapping['action'])])
+        paragraph('可定位的简历改写', 'Heading 3')
+        for rewrite in job['rewrites']:
+            paragraph(f"位置：{rewrite['placement']}；使用状态：{LABELS[rewrite['use_status']]}")
+            paragraph(rewrite['text'])
+            paragraph(refs(rewrite['evidence_refs']))
+        paragraph(f"语料：{row['corpus_id']}；采集：{row['captured_at']}；SHA256：{row['source_sha256']}")
+        paragraph('已采集 JD 原文', 'Heading 3')
+        paragraph(row['source_text'])
+    heading('简历版本与投递行动', 'actions')
+    for variant in data.get('resume_variants', []) if isinstance(data.get('resume_variants'), list) else []:
+        if not isinstance(variant, dict):
+            continue
+        paragraph(f"{variant.get('id', '字段缺失')} · {variant.get('name', '字段缺失')}", 'Heading 2')
+        paragraph('适用岗位：' + ', '.join(variant.get('job_ids', []) if _strings(variant.get('job_ids')) else []))
+        for change in variant.get('changes', []) if _strings(variant.get('changes')) else []:
+            paragraph(change)
+    for action in data.get('action_plan', []) if isinstance(data.get('action_plan'), list) else []:
+        if not isinstance(action, dict):
+            continue
+        paragraph(f"岗位 {action.get('job_id', '字段缺失')}；简历版本 {action.get('resume_variant_id', '字段缺失')}")
+        paragraph(action.get('action', '字段缺失'))
+        paragraph('材料：' + '；'.join(action.get('materials', []) if _strings(action.get('materials')) else []))
+    heading('待确认及排除记录', 'appendix')
+    pending = [job for job in data['jobs'] if not job.get('selected') and job not in proposed]
+    if not pending:
+        paragraph('本次输入没有待确认或排除记录；这不表示全网没有其他岗位。')
+    for job in pending:
+        paragraph(f"{job['id']} · {job['company']} · {job['title']}", 'Heading 2')
+        paragraph(f"状态：{job['status']}；资格：{job['eligibility']}；原因：{job['reason']}")
+        link(paragraph(''), '待确认或排除岗位 JD', job['jd_url'])
+        for req in job['requirements']:
+            paragraph(f"{req['text']} | {req['result']} | {req['jd_evidence']} | {req['candidate_evidence']}")
+            paragraph(refs(req.get('evidence_refs', [])) or '没有已确认引用。')
+    represented = {job.get('corpus_id') for job in data['jobs'] if isinstance(job.get('corpus_id'), str)}
+    for row in data['corpus']['records']:
+        if row['corpus_id'] in represented:
+            continue
+        paragraph(f"未入主清单语料：{row['corpus_id']} · {row['title']}", 'Heading 2')
+        paragraph(f"来源状态：{row['status']}；可比较：{row['comparable']}；完整 JD：{row['full_jd']}")
+        paragraph('记录原因：' + (row.get('excluded_reason') or '本次未生成对应岗位分析，不作为可投结论。'))
+        link(paragraph(''), '语料来源 JD', row['jd_url'])
+    heading('简历证据账本', 'ledger')
+    for item in ledger.values():
+        paragraph(f"{item['id']} | {item['source_id']} | {item['locator']}", 'Heading 2')
+        paragraph(f"状态：{item['state']}；已确认：{item['confirmed']}")
+        paragraph(item['text'])
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix='.jobmatch-', suffix='.docx', dir=output.parent)
+        os.close(fd)
+    except OSError as exc:
+        return {'ok': False, 'status': 'blocked', 'errors': [str(exc)], 'validation': checked}
+    try:
+        document.save(temporary)
+        _monochrome(temporary)
+        inspection = _inspect(temporary)
+        os.link(temporary, output)  # Atomic create, fails even if destination appears concurrently.
+    except (OSError, ValueError) as exc:
+        return {'ok': False, 'status': 'blocked', 'errors': [str(exc)], 'validation': checked}
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return {'ok': True, 'status': 'render_pending', 'output': str(output), 'stage': stage,
+            'companies': checked['companies'], 'selected_jobs': len(selected), 'proposed_jobs': len(proposed),
+            'diagnostics': checked['errors'] + missing, 'validation': checked, **inspection}

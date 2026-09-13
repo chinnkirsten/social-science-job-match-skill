@@ -7,13 +7,13 @@
 `open_source_stack.json`中的状态含义：
 
 - `baseline`：职业标准基线，可用于归一化，但必须披露版本。
-- `planned_adapter`：已评估的解析或抽取候选；尚未实现调用适配器。
+- `optional_adapter`：已实现的可选接口，需单独准备依赖或服务。
 - `experimental`：可做候选映射，结果必须人工审计。
 - `pattern_only`：只借鉴交互或分析方法，不依赖其分数和结论。
 - `discovery_only`：只能发现线索，不能进入已确认可投主清单。
 - `evaluation_only`：只用于离线评估分类或实体链接质量。
 
-所有组件的实际状态见`integration_state`；当前均为`documented_only`，登记版本不代表安装或实测。详情中的baseline等是用途分类。
+所有组件的代码状态见`integration_state`，当前均为`adapter_implemented`，对应适配文件、契约测试和验证记录均在注册表中。`default_enabled=false`保留为按需启用的安全默认值，不再表示没有实现。安装、实际调用、上游版本核验、效果评估是不同状态，见[runtime-verification.json](runtime-verification.json)。调用参数、依赖与完整CLI见[运行手册](../references/runtime-guide.md)。
 
 ## 统一岗位语料记录
 
@@ -89,7 +89,7 @@
 
 ## Agent 输出协议
 
-Source Scout只能写来源、页面事实和失败原因；Evidence Mapper只能追加标准技能候选与证据映射；Auditor复核后才能把岗位设为`selected=true`。每个角色保留时间戳和组件ID。Agent文字不能直接成为JD证据，也不能覆盖原始摘录。
+SourceScout提取来源事实；EvidenceMapper映射候选人证据；Auditor通过独立模型调用检查遗漏与失真。机器审核通过只产生`proposed_selection=true`，仍保持`selected=false`。只有人工核对来源身份、开放状态、完整JD、资格和改写忠实度，并提交匹配原文指纹的review文件后，`finalize`才允许计入已确认数。Agent文字不能直接成为JD证据，也不能覆盖原始摘录。
 
 ## 安全与升级
 

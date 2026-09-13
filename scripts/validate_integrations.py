@@ -3,10 +3,11 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 
 
-STATUSES = {'baseline', 'planned_adapter', 'experimental', 'pattern_only',
+STATUSES = {'baseline', 'planned_adapter', 'optional_adapter', 'experimental', 'pattern_only',
             'discovery_only', 'evaluation_only'}
 PIN_TYPES = {'release', 'commit'}
 FIELDS = ('id', 'name', 'kind', 'source', 'pin_type', 'pin', 'license', 'status',
@@ -59,15 +60,26 @@ def validate(data):
             errors.append(f'{prefix}: source must be an HTTPS URL')
         if component.get('status') not in STATUSES:
             errors.append(f'{prefix}: invalid status')
-        if component.get('integration_state') != 'documented_only':
-            errors.append(f'{prefix}: runtime integration requires implementation and test evidence; current registry is documented_only')
+        state = component.get('integration_state')
+        if state not in ('documented_only', 'adapter_implemented'):
+            errors.append(f'{prefix}: invalid integration_state')
+        if state == 'adapter_implemented':
+            root = Path(__file__).resolve().parents[1]
+            for field in ('adapter_entrypoint', 'contract_test', 'verification_record'):
+                value = component.get(field)
+                if not filled(value):
+                    errors.append(f'{prefix}: {field} missing')
+                    continue
+                path = (root / value).resolve()
+                if root not in path.parents or not path.is_file():
+                    errors.append(f'{prefix}: {field} must identify an existing in-repository file')
         pin_type = component.get('pin_type')
         if pin_type not in PIN_TYPES:
             errors.append(f'{prefix}: invalid pin_type')
         if pin_type == 'commit' and not re.fullmatch(r'[0-9a-f]{40}', str(component.get('pin', ''))):
             errors.append(f'{prefix}: commit pin must be a 40-character lowercase SHA')
         if component.get('default_enabled') is True:
-            errors.append(f'{prefix}: documented-only components cannot be enabled by default')
+            errors.append(f'{prefix}: optional components require explicit opt-in; defaults must remain false')
     return {'ok': not errors, 'components': len(components), 'errors': errors}
 
 

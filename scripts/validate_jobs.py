@@ -172,10 +172,12 @@ def validate(data, now=None):
                     'unknown' if not results or 'unknown' in results else 'pass')
         if job.get('eligibility') != computed:
             fail(f'eligibility contradicts requirements: expected {computed}')
+        proposal = job.get('selected') is not True and data.get('runtime_version') is not None and job.get('proposed_selection') is True
         if job.get('selected') is not True:
             if not filled(job.get('reason')):
                 fail('non-selected record needs reason')
-            continue
+            if not proposal:
+                continue
         corpus_id = job.get('corpus_id')
         row = corpus_rows.get(corpus_id) if filled(corpus_id) else None
         if row is None:
@@ -190,6 +192,17 @@ def validate(data, now=None):
             if row.get('full_jd') is not True or row.get('comparable') is not True or row.get('status') != 'open':
                 fail('selected corpus record must be complete, comparable and open')
             raw_source = row.get('source_text', '')
+            if data.get('runtime_version'):
+                if not filled(job.get('open_evidence')) or job['open_evidence'] not in raw_source:
+                    fail('open evidence not found in captured source')
+                if job.get('selected') is True:
+                    review = job.get('human_review', {})
+                    if not isinstance(review, dict) or any(review.get(key) is not True for key in (
+                            'source_identity_verified', 'open_status_verified', 'full_jd_reviewed',
+                            'qualification_reviewed', 'rewrite_fidelity_reviewed')):
+                        fail('runtime selection requires explicit human source and fidelity review')
+                    elif review.get('source_sha256') != row.get('source_sha256'):
+                        fail('human review source hash mismatch')
             reviewed_required = {req['jd_evidence'] for req in requirements
                                  if isinstance(req, dict) and req.get('required') is True
                                  and filled(req.get('jd_evidence'))}
@@ -213,7 +226,7 @@ def validate(data, now=None):
             fail('main list requires open + pass')
         if job.get('priority') not in ('A', 'B'):
             fail('main-list priority must be A or B')
-        if job.get('hard_requirements_reviewed') is not True:
+        if not proposal and job.get('hard_requirements_reviewed') is not True:
             fail('full JD requirement review not confirmed')
         if not filled(job.get('open_evidence')):
             fail('open evidence missing')
@@ -254,11 +267,16 @@ def validate(data, now=None):
                 else:
                     for error in ref_errors(item.get('evidence_refs'), ledger, allow_empty=True):
                         fail(error)
-        if len(errors) == start:
+        if len(errors) == start and job.get('selected') is True:
             companies.add(job['company_key'].strip().casefold())
+    evidence_ok = not errors
     if len(companies) < target:
         errors.append(f'company shortfall: {len(companies)}/{target}; stage report only')
-    return {'ok': not errors, 'companies': len(companies), 'target': target, 'errors': errors}
+    return {'ok': not errors, 'evidence_ok': evidence_ok, 'companies': len(companies),
+            'target': target, 'errors': errors,
+            'issues': ([{'code': 'evidence_invalid'}] if not evidence_ok else []) +
+                      ([{'code': 'company_shortfall', 'actual': len(companies), 'target': target}]
+                       if len(companies) < target else [])}
 
 
 def main():

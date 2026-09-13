@@ -4,7 +4,7 @@
 
 ## 1. 先明确这套程序做什么
 
-程序读取你提供的具体招聘页面列表，抓取公开正文，分别调用 SourceScout、EvidenceMapper、Auditor 三个模型角色，保留证据、阶段结果和检查点。证据结构满足要求时，它生成 Word 机器分析草稿和人工复核表。人工读源核查后，`finalize` 才能把符合条件的岗位列入已确认主清单。
+程序读取你提供的具体招聘页面列表，抓取公开正文，分别调用 SourceScout、EvidenceMapper、Auditor 三个模型角色，保留来源材料、阶段结果和检查点。资料完整性满足要求时，它生成 Word 机器分析草稿和人工复核表。人工读源核查后，`finalize` 才能把符合条件的岗位列入已确认主清单。
 
 它不会替你投递、联系雇主、创建平台账号、上传简历到招聘网站，也不会自动安装全部第三方软件。`sources` 是显式输入列表，不是自动全网搜索。JobSpy 可以另行发现线索，但线索需要重新核查官方 JD，再加入来源列表。
 
@@ -71,7 +71,7 @@ mkdir -m 700 ../jobmatch-private/adapter-results
 
 密钥只通过环境变量读取。配置文件只写变量名，如 `JOB_MATCH_API_KEY`、`JOBMATCH_CLASSIFIER_KEY` 或 `JOBMATCH_SERVICE_TOKEN`。通过你的密钥管理器或终端安全方式设置实际值；不要把实际密钥写入 JSON、脚本、README 或 Git。不要把私有运行目录加入公开仓库。
 
-## 4. 先确定招聘模式和事实账本
+## 4. 先确定招聘模式和经历记录
 
 ### 4.1 招聘模式
 
@@ -87,7 +87,7 @@ mkdir -m 700 ../jobmatch-private/adapter-results
 
 ### 4.2 `candidate.json`
 
-输入是事实账本，不是把整份简历随意塞入一个文本字段。每条记录保留来源和位置；`confirmed` 必须来自候选人的确认或已完成的材料核查，不能由模型自行置为真。
+输入是经历记录，不是把整份简历随意塞入一个文本字段。每条记录保留来源和位置；`confirmed` 必须来自候选人的确认或已完成的材料核查，不能由模型自行置为真。
 
 以下是模拟输入结构。真实运行前逐项替换，不要用模拟经历生成真实求职报告：
 
@@ -114,9 +114,9 @@ mkdir -m 700 ../jobmatch-private/adapter-results
 }
 ```
 
-`state` 仅允许 `completed`、`ongoing`、`planned`、`unconfirmed`。岗位条件判为 `met` 或改写判为 `ready` 时，引用必须指向 `confirmed: true` 且状态为 `completed` 或 `ongoing` 的证据。没有提到某项技能，应记未知，不能自动判定不具备。
+`state` 仅允许 `completed`、`ongoing`、`planned`、`unconfirmed`。岗位条件判为 `met` 或改写判为 `ready` 时，引用必须指向 `confirmed: true` 且状态为 `completed` 或 `ongoing` 的经历记录。没有提到某项技能，应记未知，不能自动判定不具备。
 
-Docling 可帮助提取文本，但不能自动完成这一步事实确认。流水线目前直接接收账本，不直接接收 PDF 简历。
+Docling 可帮助提取文本，但不能自动完成这一步事实确认。流水线目前直接接收经历记录，不直接接收 PDF 简历。
 
 ## 5. 准备来源列表和模型配置
 
@@ -182,7 +182,7 @@ Docling 可帮助提取文本，但不能自动完成这一步事实确认。流
 
 `max_jobs` 为 1–300，约束输入来源数量；`max_parallel_calls` 为 1–4，实际控制同时处理的岗位任务数量。一个岗位内仍按 Scout → Mapper → Auditor 顺序调用；不同岗位可以并行。每个模型调用的 `max_attempts` 为 1–3。程序记录实际调用次数和耗时，但不提供精确的 token 总预算或费用结算器。
 
-远程 OpenAI-compatible 服务使用真实 HTTPS `base_url`、模型名和 `api_key_env`。私有账本会进入 Mapper 与 Auditor 的请求，只有获得相应授权后才能设置 `privacy.allow_remote_candidate_data: true`。这个总开关不代替每个第三方适配器自己的隐私开关。
+远程 OpenAI-compatible 服务使用真实 HTTPS `base_url`、模型名和 `api_key_env`。私有经历记录会进入 Mapper 与 Auditor 的请求，只有获得相应授权后才能设置 `privacy.allow_remote_candidate_data: true`。这个总开关不代替每个第三方适配器自己的隐私开关。
 
 ### 5.3 三个独立角色
 
@@ -201,8 +201,8 @@ Docling 可帮助提取文本，但不能自动完成这一步事实确认。流
 | 角色 | 实际输入 | 实际工作 | 不能做的事 |
 | --- | --- | --- | --- |
 | SourceScout | 已抓取页面全文、链接、目标模式和城市 | 提取所有重要条件、职责、开放状态原文和职位信息 | 根据求职偏好伪造页面城市、届别或岗位开放状态 |
-| EvidenceMapper | 原文、Scout 提取、冻结账本、可选适配器结果 | 每条条件对照、至少 3 项映射、证据允许时至少 2 条改写、版本和材料行动 | 新增经历、夸大数字和职责、修改事实账本 |
-| Auditor | 原文、账本、提取和映射提案 | 独立检查遗漏硬条件、资格错判、改写失真，返回批准或问题列表 | 把模型审核当成人工读源核验，修改证据让自己通过 |
+| EvidenceMapper | 原文、Scout 提取、本轮固定的经历记录、可选适配器结果 | 每条条件对照、至少 3 项岗位要求与经历对照、经历内容足够时至少 2 条改写、版本和材料行动 | 新增经历、夸大数字和职责、修改经历记录 |
+| Auditor | 原文、经历记录、提取内容与匹配建议 | 独立检查遗漏必需条件、资格错判、改写失真，返回批准或问题列表 | 把模型审核当成人工读源核验，改动来源或经历来使判断通过 |
 
 页面、简历、服务返回值都被当作数据，而非可执行指令。程序另行核验原文片段、哈希、引用、模式与数量。模型批准不会自动把 `selected` 改为 `true`。
 
@@ -221,7 +221,7 @@ Docling 可帮助提取文本，但不能自动完成这一步事实确认。流
 
 适配器使用临时目录、`--ephemeral`、`--ignore-user-config`、`--sandbox read-only`，并在提示中要求不调用工具、不读文件。它不会代你登录。此 CLI 可能调用云端模型，因此处理候选人数据也需要 `allow_remote_candidate_data: true`。
 
-`read-only` 主要限制写入，不是禁止读取本机文件的隔离边界；提示中的“不读文件”也不是权限控制。不要把它描述成安全沙箱已经隔离了全部隐私。处理敏感简历时，优先使用权限和网络出口都受到约束的服务，只向模型发送必要账本字段；更强隔离需由部署者在操作系统或容器层实现。
+`read-only` 主要限制写入，不是禁止读取本机文件的隔离边界；提示中的“不读文件”也不是权限控制。不要把它描述成安全沙箱已经隔离了全部隐私。处理敏感简历时，优先使用权限和网络出口都受到约束的服务，只向模型发送必要经历记录字段；更强隔离需由部署者在操作系统或容器层实现。
 
 ## 6. 运行、人工复核和 Word 交付
 
@@ -236,17 +236,17 @@ python scripts/run_job_match.py run --config ../jobmatch-private/config.json --c
 
 程序不会在服务不可用时改用模拟数据完成报告。一个岗位失败时，检查点保留错误码，其他岗位可以继续。典型结果：
 
-- `awaiting_review`：结构证据检查通过，等待人工复核，不等于已确认可投。
-- `needs_evidence`：材料、提取、对照或资格检查未通过；应修正输入或补足证据。
+- `awaiting_review`：资料完整性与来源检查通过，等待人工复核，不等于已确认可投。
+- `needs_evidence`：材料、提取、对照或资格检查未通过；应修正输入或补充材料。
 - `blocked`：配置、依赖、授权、输出位置等阻止继续。
 
 运行目录包括：
 
 - `checkpoint.json`：请求指纹、每项结果、状态与完成时间。
 - `cache/`：可过期的抓取与适配器缓存。
-- `report-001.json`：机器分析、语料、账本、版本和行动方案。
+- `report-001.json`：机器分析、岗位资料、经历记录、版本和行动方案。
 - `report-001-review.json`：默认全部未批准的人工复核模板。
-- `report-001.docx`：证据结构满足要求时生成的机器分析阶段稿。
+- `report-001.docx`：资料完整性满足要求时生成的机器分析阶段稿。
 - `report-001-result.json`：运行摘要、验证结果、模型调用和缓存统计。
 
 后续运行使用递增文件名，不覆盖旧报告。`report_file` 字段给出本次文件名，不能假设每次都是 001。Word 未生成时，查看 `validation.errors` 和各阶段错误码，不要拿 JSON 存在冒充报告已完成。
@@ -273,15 +273,15 @@ python scripts/run_job_match.py run --config ../jobmatch-private/config.json --c
 }
 ```
 
-逐岗实际打开来源，检查来源身份、岗位是否仍开放、JD 是否完整、所有硬条件是否满足、改写是否忠实。完成哪项核查才将哪项改成 `true`。五项全部通过且来源哈希匹配，才可转为已确认岗位。
+逐岗实际打开来源，检查来源身份、岗位是否仍开放、JD 是否完整、所有必需条件是否满足、改写是否忠实。完成哪项核查才将哪项改成 `true`。五项全部通过且来源哈希匹配，才可转为已确认岗位。
 
-`ready_rewrite_indices` 是从 0 开始的改写序号，仅填写已经逐句核对的改写。例如 `[0, 1]` 表示批准前两条。`create_first` 不能直接批准为已完成经历；必须先完成相应工作、更新且确认事实账本，再用新运行目录重跑。
+`ready_rewrite_indices` 是从 0 开始的改写序号，仅填写已经逐句核对的改写。例如 `[0, 1]` 表示批准前两条。`create_first` 不能直接批准为已完成经历；必须先完成相应工作、更新且确认经历记录，再用新运行目录重跑。
 
 报告哈希绑定整个 JSON，不只是文件名。改过报告后不能复用旧复核表。哈希能阻止意外沿用旧审批，但不是数字签名或身份认证；程序无法证明填表的人确实读过网页。
 
 ### 6.3 导出复核后 Word
 
-目标数量满足、证据门禁通过并且报告必备字段齐全时：
+目标数量满足、资料检查通过并且报告必备字段齐全时：
 
 ```bash
 python scripts/run_job_match.py finalize ../jobmatch-private/run-001/report-001.json --review ../jobmatch-private/run-001/report-001-review.json --output ../jobmatch-private/run-001/reviewed-report.docx
@@ -293,7 +293,7 @@ python scripts/run_job_match.py finalize ../jobmatch-private/run-001/report-001.
 python scripts/run_job_match.py finalize ../jobmatch-private/run-001/report-001.json --review ../jobmatch-private/run-001/report-001-review.json --output ../jobmatch-private/run-001/reviewed-stage.docx --stage
 ```
 
-`--stage` 只允许明确呈现数量缺口或未完成的展示字段，不能豁免证据错误。机器通过但未经人工核查的提案会标记“机器分析草稿／未确认可投”，不计入已确认公司数。不得为凑够 20 家重复同一公司、放宽城市或混入实习。
+`--stage` 只允许明确呈现数量缺口或未完成的展示字段，不能忽略资料缺失或来源问题。机器通过但未经人工核查的提案会标记“机器分析草稿／未确认可投”，不计入已确认公司数。不得为凑够 20 家重复同一公司、放宽城市或混入实习。
 
 仅对已经准备好的报告 JSON 重新导出时，可使用：
 
@@ -301,16 +301,16 @@ python scripts/run_job_match.py finalize ../jobmatch-private/run-001/report-001.
 python scripts/run_job_match.py report ../jobmatch-private/run-001/report-001.json --output ../jobmatch-private/run-001/reexport-stage.docx --stage
 ```
 
-导出仍执行证据门禁，不是跳过 `finalize` 的捷径。每次使用新输出名；程序禁止覆盖原文件。
+导出仍执行资料检查，不是跳过 `finalize` 的捷径。每次使用新输出名；程序禁止覆盖原文件。
 
-Word 包含模式、来源统计、全部主清单岗位及机器提案、具体 JD 与投递链接、条件核查、逐项映射、改写使用状态、证据定位、简历版本、材料行动、待确认或排除记录、事实账本。正式稿还要求：
+Word 包含模式、来源统计、全部主清单岗位及机器提案、具体 JD 与投递链接、条件核查、岗位要求与经历对照、改写使用状态、材料出处、简历版本、材料行动、待确认或排除记录、经历记录。正式稿还要求：
 
 - `report_summary`：非空摘要。
 - `resume_variants`：每项包含 `id`、`name`、`job_ids`、具体 `changes`。
 - `action_plan`：每项包含 `job_id`、具体 `action`、`materials`、`resume_variant_id`，与版本和岗位对应。
 - 每个主清单岗位的 `details.salary`、`details.deadline` 和对应模式字段。确实未披露可以明确写未披露；不能把未知薪酬编成一个数字。
 
-正式报告把逐岗修改建议归入不超过 3 套简历结构，通常使用 2–3 套；单一方向可以少于 2 套。各岗位仍保留自己的具体改写和证据。流水线先合并同名版本，仍超过 3 套时会额外调用一次 EvidenceMapper 仅做版本分组，不允许改写或丢弃原岗位建议；这次调用也计入执行记录。正式导出拒绝超过 3 套的版本清单。
+正式报告把逐岗修改建议归入不超过 3 套简历结构，通常使用 2–3 套；单一方向可以少于 2 套。各岗位仍保留自己的具体改写和材料出处。流水线先合并同名版本，仍超过 3 套时会额外调用一次 EvidenceMapper 仅做版本分组，不允许改写或丢弃原岗位建议；这次调用也计入执行记录。正式导出拒绝超过 3 套的版本清单。
 
 Word 为 A4、黑白正文 12 pt、表格 10.5 pt，无填充色块，含目录书签、页码和可点击链接。程序检查 OOXML 后原子写出；`render_pending`、`visual_review: pending` 说明尚未完成实际视觉验收。用 Word 或 LibreOffice 打开并逐页检查分页、表格、字体和链接后，才能称为排版验收完成。本 CLI 不自动导出 PDF。
 
@@ -391,7 +391,7 @@ git -C ../tabiya-open-dataset checkout --detach 815c85d4be9b059c927156d2819e41e9
 python scripts/run_job_match.py adapter tabiya_open_dataset --input ../jobmatch-private/inputs/tabiya.json --config ../jobmatch-private/config.json --output ../jobmatch-private/adapter-results/tabiya.json
 ```
 
-`table` 可为 `skills`、`occupations`、`occupation_skill_relations`，后者可用职业或技能 ID 搜索。此数据的 ESCO 1.1.1 与上一节 1.2.1 是不同版本，不应混写成同一语料。
+`table` 可为 `skills`、`occupations`、`occupation_skill_relations`，后者可用职业或技能 ID 搜索。此数据的 ESCO 1.1.1 与上一节 1.2.1 是不同版本，不应混写成同一岗位资料。
 
 ### 7.4 Docling：`docling`
 
@@ -418,7 +418,7 @@ python scripts/install_optional.py docling --execute
 python scripts/run_job_match.py adapter docling --input ../jobmatch-private/inputs/docling.json --config ../jobmatch-private/config.json --output ../jobmatch-private/adapter-results/docling.json
 ```
 
-PDF 使用 `NativePdfFormatOption` 的无模型解析路径，不自动下载 OCR 或视觉模型。扫描件、图片页或不完整转换会被拒绝，需要另行获得 OCR 输出并核对原件。结果包含 Markdown 和结构化文档；其中的事实仍需人工形成账本。独立 CLI 缓存默认不存私有解析结果，但输出 JSON 本身仍包含私有文本。
+PDF 使用 `NativePdfFormatOption` 的无模型解析路径，不自动下载 OCR 或视觉模型。扫描件、图片页或不完整转换会被拒绝，需要另行获得 OCR 输出并核对原件。结果包含 Markdown 和结构化文档；其中的事实仍需人工形成经历记录。独立 CLI 缓存默认不存私有解析结果，但输出 JSON 本身仍包含私有文本。
 
 ### 7.5 Crawl4AI：`crawl4ai`
 
@@ -497,7 +497,7 @@ python scripts/run_job_match.py adapter jobspy --input ../jobmatch-private/input
 python scripts/run_job_match.py adapter tabiya_livelihoods_classifier --input ../jobmatch-private/inputs/classifier.json --config ../jobmatch-private/config.json --output ../jobmatch-private/adapter-results/classifier.json
 ```
 
-实际发送 `text`、`title`、`description`、`options` 中提供的字段，`text` 或 `description` 至少一个非空。`api_key_env` 对应 `x-api-key`，未启用鉴权的本地服务可不配置。返回需要包含 `classification` 和 `metadata`；模型建议不能替代职位资格证据。
+实际发送 `text`、`title`、`description`、`options` 中提供的字段，`text` 或 `description` 至少一个非空。`api_key_env` 对应 `x-api-key`，未启用鉴权的本地服务可不配置。返回需要包含 `classification` 和 `metadata`；模型建议不能替代申请条件的判断依据。
 
 ### 7.8 ESCO 技能抽取器：`esco_skill_extractor`
 
@@ -543,7 +543,7 @@ python scripts/run_job_match.py adapter esco_skill_extractor --input ../jobmatch
 python scripts/run_job_match.py adapter tabiya_compass --input ../jobmatch-private/inputs/compass.json --config ../jobmatch-private/config.json --output ../jobmatch-private/adapter-results/compass.json
 ```
 
-请求 `/conversations/{session_id}/messages?filter_pii=true`。`token_env` 对应 Bearer Token；服务无此鉴权要求时可不设置。输入始终按私有处理，即使错误标成公开也不能绕过。会话会保存在上游，不启用适配器结果缓存。发现的技能仍待候选人确认，不能自动写入已确认账本。
+请求 `/conversations/{session_id}/messages?filter_pii=true`。`token_env` 对应 Bearer Token；服务无此鉴权要求时可不设置。输入始终按私有处理，即使错误标成公开也不能绕过。会话会保存在上游，不启用适配器结果缓存。发现的技能仍待候选人确认，不能自动写入已确认经历记录。
 
 ### 7.10 Resume Matcher：`resume_matcher`
 
@@ -594,7 +594,7 @@ git -C ../melo-benchmark checkout --detach 014982fef0abf5149b16e75b1043bd286ae4c
 python scripts/run_job_match.py adapter melo_benchmark --input ../jobmatch-private/inputs/melo.json --config ../jobmatch-private/config.json --output ../jobmatch-private/adapter-results/melo.json
 ```
 
-可选 `python` 必须填写已经安装依赖的 Python 可执行文件路径，不能只写 `python3` 名称；不配置时使用当前解释器。查询与语料 ID 必须是安全 ASCII 标识，矩阵为“查询数 × 语料数”，值必须有限。每个查询至少有一个正相关标注。检出提交不符、有修改、依赖或平台不兼容会失败，不生成假的评估分数。
+可选 `python` 必须填写已经安装依赖的 Python 可执行文件路径，不能只写 `python3` 名称；不配置时使用当前解释器。查询与岗位资料 ID 必须是安全 ASCII 标识，矩阵为“查询数 × 岗位资料数”，值必须有限。每个查询至少有一个正相关标注。检出提交不符、有修改、依赖或平台不兼容会失败，不生成假的评估分数。
 
 这个小输入只能测试调用；不能称为已跑完整 MELO 基准，更不能推出中国求职场景效果。
 
@@ -638,7 +638,7 @@ python scripts/run_job_match.py adapter tgre_classification --input ../jobmatch-
 
 ## 8. 把适配器接入逐岗分析
 
-`adapter` 命令用于独立执行。要在每个完整、开放且模式匹配的 JD 被映射之前自动补充参考，可配置 `adapter_steps`，并在 `adapters` 为相应组件显式启用。
+`adapter` 命令用于独立执行。要在每个完整、开放且模式匹配的 JD 与经历对照之前自动补充参考，可配置 `adapter_steps`，并在 `adapters` 为相应组件显式启用。
 
 ```json
 {
@@ -665,7 +665,7 @@ python scripts/run_job_match.py adapter tgre_classification --input ../jobmatch-
 }
 ```
 
-上面只是应合并入主配置的片段。`$source` 可访问 `url`、`text`、`links`；`$scout` 可访问提取字段；`$candidate` 是整个冻结账本列表。绑定只能读取实际存在的字典路径，不提供任意表达式、模板执行或数组索引功能。输入引用 `$candidate` 时自动标为私有。
+上面只是应合并入主配置的片段。`$source` 可访问 `url`、`text`、`links`；`$scout` 可访问提取字段；`$candidate` 是整个本轮固定的经历记录列表。绑定只能读取实际存在的字典路径，不提供任意表达式、模板执行或数组索引功能。输入引用 `$candidate` 时自动标为私有。
 
 此机制把适配器结果作为 Mapper 的补充参考，保留调用版本和缓存状态；不会把分类器输出自动升级为“雇主要求”或“候选人已掌握技能”。不要把所有 12 项放进每个岗位的步骤：文档解析、会话、已有简历预览、基准评估有不同输入和副作用，通常应独立执行。任何启用步骤失败会使该岗位任务记录错误，程序不会悄悄忽略它。
 
@@ -675,9 +675,9 @@ python scripts/run_job_match.py adapter tgre_classification --input ../jobmatch-
 
 默认时间：公开来源 3600 秒，最多 24 小时；robots 3600 秒；适配器结果默认 24 小时、最多 7 天。Compass、Resume Matcher 和 ESCO 抽取任务不使用结果缓存，避免会话或任务被错误重放。私有适配器结果仅在主流水线 `cache_candidate_data: true` 时允许缓存，独立 `adapter --cache-dir` 默认不启用私有缓存。
 
-同样的配置、账本、来源和提示版本，可以重用相同 `--output-dir` 恢复未完成工作。已完成项只有在原采集时间不足 24 小时时才恢复；过期或失败项重试。请求指纹改变时拒绝复用旧目录，使用新的运行目录。`refresh_sources: true` 会重新抓取，但配置本身改变也会改变指纹，因此切换该值时应使用新目录。
+同样的配置、经历记录、来源和提示版本，可以重用相同 `--output-dir` 恢复未完成工作。已完成项只有在原采集时间不足 24 小时时才恢复；过期或失败项重试。请求指纹改变时拒绝复用旧目录，使用新的运行目录。`refresh_sources: true` 会重新抓取，但配置本身改变也会改变指纹，因此切换该值时应使用新目录。
 
-检查点与报告本身一直含有候选人账本和分析结果。`cache_candidate_data: false` 只关闭额外私有缓存，不等于不写盘、不保存简历信息或已经加密。运行目录权限为 0700，JSON 采用私有临时文件原子写入；权限控制不是磁盘加密，也不能阻止管理员、备份软件或共享账号读取。按实际数据授权范围配置磁盘、备份与保留策略。
+检查点与报告本身一直含有候选人经历记录和分析结果。`cache_candidate_data: false` 只关闭额外私有缓存，不等于不写盘、不保存简历信息或已经加密。运行目录权限为 0700，JSON 采用私有临时文件原子写入；权限控制不是磁盘加密，也不能阻止管理员、备份软件或共享账号读取。按实际数据授权范围配置磁盘、备份与保留策略。
 
 清理过期缓存：
 
@@ -698,7 +698,7 @@ python -m unittest discover -s scripts -p 'test_*.py' -v
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-测试中的 SDK double、本地 HTTP fixture、合成岗位和模型返回值，验证的是协议、门禁、缓存、恢复、调用次序和导出结构，不是第三方真实服务的效果。测试全部通过不能写成“12 个服务都已安装并成功运行”。
+测试中的 SDK double、本地 HTTP fixture、合成岗位和模型返回值，验证的是协议、检查要求、缓存、恢复、调用次序和导出结构，不是第三方真实服务的效果。测试全部通过不能写成“12 个服务都已安装并成功运行”。
 
 每个真实适配器另行执行一次获准的小样本，并保存私有结果里的 `transport`、`upstream_version`、`expected_pin`、`invoked_at` 和 `cache_hit`。需要确认刚调用过上游时，不传缓存目录或使用新的缓存目录；缓存命中本身不证明当前上游可用。远程接口版本返回 `unverified` 时，报告中也保留该状态。
 
@@ -714,9 +714,9 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 | `privacy_consent_required` / `PRIVACY_CONSENT_REQUIRED` | 数据是否会离开本机，是否已有授权，是否应改用受限本地服务 |
 | `source_not_allowed` / `robots_denied` | 核查来源范围和条款，必要时选择其他授权来源，不绕过 |
 | `invalid_model_json` / `invalid_stage_output` | 检查模型是否遵循 JSON 合同，记录失败，不使用模拟结果补齐 |
-| `unsupported_excerpt` / `unsupported_candidate_claim` | 回到来源或候选人账本补证据，不能删掉检查规则 |
+| `unsupported_excerpt` / `unsupported_candidate_claim` | 回到来源或候选人经历记录补充材料，不能删掉检查规则 |
 | `resume_mismatch` / `stale_review` | 输入改变后用新目录重跑、重新复核，不复用旧审批 |
 | `version_mismatch` / `dirty_checkout` | 使用规定提交的干净检出；不在上游检出中生成临时文件 |
 | `render_pending` | 打开 Word 逐页验收；这不是已完成视觉检查的状态 |
 
-程序没有设置一个“一键让所有岗位通过”的开关。证据不足时留下准确的失败状态，是正常结果的一部分。
+程序没有设置一个“一键让所有岗位通过”的开关。现有材料不足时留下准确的失败状态，是正常结果的一部分。

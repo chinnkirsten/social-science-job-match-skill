@@ -21,9 +21,27 @@ LABELS = {
     'days_per_week': '每周天数', 'duration_months': '持续月数',
     'graduation_cohort': '毕业届别', 'recruitment_batch': '招聘批次',
     'graduate_eligibility': '应届资格', 'experience_requirement': '工作年限要求',
-    'ready': '可使用（已核对原证据）', 'verify_first': '需先核实，不可直接使用',
+    'ready': '可使用（已核对简历或补充说明）', 'verify_first': '需先核实，不可直接使用',
     'create_first': '需先完成，不可写成已有经历',
 }
+DISPLAY = {
+    'open': '正在招聘', 'closed': '已结束招聘', 'unknown': '待确认',
+    'pass': '符合已知必需条件', 'fail': '尚未满足必需条件',
+    'met': '已有材料支持', 'unmet': '尚未满足',
+    'completed': '已完成', 'ongoing': '进行中', 'planned': '计划中',
+    'unconfirmed': '待确认', 'employer_official': '雇主官网',
+    'official_ats': '官方招聘系统', 'employer_verified_platform': '已核实雇主身份的直发平台',
+    'official_repost': '机构转载', 'aggregator': '招聘信息汇总网站',
+    'sample_observation': '仅说明本次参考岗位的共同要求', 'none': '暂无可比较的岗位',
+    'SourceScout': '岗位信息整理', 'EvidenceMapper': '经历匹配与简历建议', 'Auditor': '独立复核',
+}
+
+
+def _display(value):
+    """Translate controlled labels only; never rewrite quoted source material."""
+    if type(value) is bool:
+        return '是' if value else '否'
+    return DISPLAY.get(str(value), str(value))
 
 
 def _filled(value):
@@ -189,7 +207,7 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
     section.left_margin = section.right_margin = Cm(2)
     document.core_properties.author = 'Job Match Skill'
     document.core_properties.title = '求职岗位与简历调整报告'
-    document.core_properties.subject = '证据核查报告；结构检查通过，视觉验收待完成'
+    document.core_properties.subject = '岗位匹配与简历建议；资料检查通过，排版待检查'
     for style in document.styles:
         if style.type == 1 or style.type == 2:
             style.font.name = 'Arial'
@@ -213,7 +231,7 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
     footer.add_run('第 ')
     field = OxmlElement('w:fldSimple'); field.set(qn('w:instr'), 'PAGE')
     footer._p.append(field)
-    footer.add_run(' 页 · 视觉验收待完成')
+    footer.add_run(' 页 · 排版待检查')
 
     def paragraph(text, style=None):
         return document.add_paragraph(str(text), style)
@@ -274,16 +292,16 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
     corpus = {item['corpus_id']: item for item in data['corpus']['records']}
 
     def refs(items):
-        return '\n'.join(f"{ref}: {ledger[ref]['source_id']} / {ledger[ref]['locator']} / "
-                         f"{ledger[ref]['state']} / confirmed={ledger[ref]['confirmed']}" for ref in items)
+        return '\n'.join(f"经历 {ref}：{ledger[ref]['source_id']} / {ledger[ref]['locator']}；"
+                         f"{_display(ledger[ref]['state'])}；已确认：{_display(ledger[ref]['confirmed'])}" for ref in items)
 
     selected = [job for job in data['jobs'] if job.get('selected')]
     proposed = [job for job in data['jobs'] if stage and data.get('runtime_version') is not None and not job.get('selected')
                 and job.get('proposed_selection') is True]
     detailed = selected + proposed
     paragraph('求职岗位与简历调整报告', 'Title')
-    paragraph('阶段稿' if stage else '完整数据稿')
-    paragraph('本文件由程序生成，结构检查不等于事实认证；视觉验收待完成。')
+    paragraph('阶段报告' if stage else '求职报告')
+    paragraph('本报告由程序整理。资料检查不能代替逐项核实，排版仍需检查。')
     if data.get('synthetic') is True:
         paragraph('模拟测试数据，仅用于软件验证；不代表真实候选人或可投岗位。')
     paragraph(f"招聘模式：{LABELS[data['employment_mode']]}；地区：{data['corpus']['geography']}")
@@ -292,7 +310,7 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
     if proposed:
         paragraph(f'机器分析草稿／未确认可投：另有 {len(proposed)} 个待人工复核岗位，不计入已确认主清单。')
     sections = [('报告摘要', 'summary'), ('样本与来源', 'sources'), ('岗位与逐条调整', 'jobs'),
-                ('简历版本与投递行动', 'actions'), ('待确认及排除记录', 'appendix'), ('简历证据账本', 'ledger')]
+                ('简历版本与投递安排', 'actions'), ('待确认与未推荐岗位', 'appendix'), ('经历记录与材料出处', 'ledger')]
     paragraph('目录', 'Heading 1')
     for label, anchor in sections:
         link(paragraph(''), label, anchor=anchor)
@@ -302,7 +320,7 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
     paragraph(data.get('report_summary') or '摘要尚未提供；本阶段稿不作为完整交付。')
     action_by_job = {a.get('job_id'): a for a in data.get('action_plan', []) if isinstance(a, dict)}
     if detailed:
-        paragraph('优先处理的三项（机器草稿仍须先复核）' if stage else '优先处理的三项', 'Heading 2')
+        paragraph('优先准备的岗位（机器草稿仍须先复核）' if stage else '优先准备的岗位', 'Heading 2')
         for job in sorted(detailed, key=lambda j: (j.get('priority') != 'A', j['id']))[:3]:
             action = action_by_job.get(job['id'], {})
             paragraph(f"{job['company']} · {job['title']}；简历版本：{action.get('resume_variant_id', '待整理')}")
@@ -313,18 +331,19 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
         paragraph('阶段限制：' + '\n'.join(checked['errors'] + missing or ['本次明确按阶段稿导出。']))
     heading('样本与来源', 'sources')
     basis = data['evidence_basis']
-    for field in ('method_version', 'corpus_as_of', 'candidate_evidence_count', 'market_corpus_count',
-                  'market_employer_count', 'trend_claim_level'):
-        paragraph(f'{field}: {basis[field]}')
-    paragraph('本批语料仅支持样本观察，不能推断整体市场趋势或个人录用概率。')
+    for field, title in [('method_version', '分析方法版本'), ('corpus_as_of', '岗位信息采集截至'),
+                         ('candidate_evidence_count', '经历记录数量'), ('market_corpus_count', '可比较的完整岗位数量'),
+                         ('market_employer_count', '涉及雇主数量'), ('trend_claim_level', '分析适用范围')]:
+        paragraph(f'{title}：{_display(basis[field])}')
+    paragraph('这些资料只反映本次参考岗位的情况，不能代表整个招聘市场，也不能用于预测录用概率。')
     execution = data.get('execution', {})
     calls = execution.get('model_calls', [])
     if calls:
-        paragraph('本轮实际模型调用：' + '、'.join(str(c.get('role', 'unknown')) for c in calls))
+        paragraph('本次自动分析步骤：' + '、'.join(_display(c.get('role', 'unknown')) for c in calls))
     for adapter in execution.get('adapters', []):
-        paragraph(f"本轮组件：{adapter.get('component_id')}；上游版本：{adapter.get('upstream_version')}；调用于：{adapter.get('invoked_at')}；缓存命中：{adapter.get('cache_hit')}")
+        paragraph(f"本次使用工具：{adapter.get('component_id')}；版本：{adapter.get('upstream_version')}；使用时间：{adapter.get('invoked_at')}；复用已保存结果：{_display(adapter.get('cache_hit'))}")
     for source in basis['market_sources']:
-        p = paragraph(f"{source['name']} | {source['source_tier']} | {source['records']} 条 | ")
+        p = paragraph(f"{source['name']} | {_display(source['source_tier'])} | {source['records']} 条 | ")
         link(p, '来源', source['url'])
     for taxonomy in basis.get('taxonomies', []):
         p = paragraph(f"{taxonomy['name']} {taxonomy['version']}：{taxonomy['use']} | ")
@@ -336,8 +355,8 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
             paragraph('机器分析草稿／未确认可投。以下是待人工复核的分析，不是投递推荐。')
         row = corpus[job['corpus_id']]
         paragraph(f"编号：{job['id']}；优先级：{job['priority']}；地点：{' / '.join(row['locations'])}")
-        paragraph(f"状态：{job['status']}；资格：{job['eligibility']}；核查时间：{job['checked_at']}")
-        paragraph(f"来源等级：{job['source_tier']}；开放证据：{job['open_evidence']}")
+        paragraph(f"招聘状态：{_display(job['status'])}；申请条件：{_display(job['eligibility'])}；核查时间：{job['checked_at']}")
+        paragraph(f"信息来源：{_display(job['source_tier'])}；在招依据：{job['open_evidence']}")
         link(paragraph(''), '具体 JD', job['jd_url'])
         if job.get('apply_url'):
             link(paragraph(''), '投递入口', job['apply_url'])
@@ -352,26 +371,26 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
         paragraph('JD 职责', 'Heading 3')
         for value in row['responsibilities']:
             paragraph(value)
-        paragraph('JD 条件与资格核查', 'Heading 3')
+        paragraph('岗位要求与申请条件', 'Heading 3')
         for requirement in job['requirements']:
-            paragraph(f"{requirement['text']} | {'必需' if requirement['required'] else '优先'} | {requirement['result']}")
+            paragraph(f"{requirement['text']} | {'必需' if requirement['required'] else '优先'} | {_display(requirement['result'])}")
             paragraph('JD 原文：' + requirement['jd_evidence'])
-            paragraph('候选人证据：' + requirement['candidate_evidence'])
-            paragraph(refs(requirement.get('evidence_refs', [])) or '无已确认的简历证据引用。')
+            paragraph('相关经历：' + requirement['candidate_evidence'])
+            paragraph(refs(requirement.get('evidence_refs', [])) or '尚未找到已确认的相关经历。')
         paragraph('逐项要求对照', 'Heading 3')
         for mapping in job['mappings']:
-            table(['字段', '核查内容'], [('岗位要求', mapping['requirement']), ('简历证据', mapping['resume_evidence']),
-                  ('证据定位', refs(mapping.get('evidence_refs', [])) or '未引用候选人事实'),
-                  ('差距', mapping['gap']), ('调整动作', mapping['action'])])
-        paragraph('可定位的简历改写', 'Heading 3')
+            table(['项目', '具体说明'], [('岗位要求', mapping['requirement']), ('相关经历', mapping['resume_evidence']),
+                  ('材料出处', refs(mapping.get('evidence_refs', [])) or '尚无对应经历记录'),
+                  ('待补充之处', mapping['gap']), ('修改建议', mapping['action'])])
+        paragraph('简历改写示例与放置位置', 'Heading 3')
         for rewrite in job['rewrites']:
             paragraph(f"位置：{rewrite['placement']}；使用状态：{LABELS[rewrite['use_status']]}")
             paragraph(rewrite['text'])
             paragraph(refs(rewrite['evidence_refs']))
-        paragraph(f"语料：{row['corpus_id']}；采集：{row['captured_at']}；SHA256：{row['source_sha256']}")
-        paragraph('已采集 JD 原文', 'Heading 3')
+        paragraph(f"岗位资料编号：{row['corpus_id']}；采集时间：{row['captured_at']}；内容校验码（SHA256）：{row['source_sha256']}")
+        paragraph('招聘原文', 'Heading 3')
         paragraph(row['source_text'])
-    heading('简历版本与投递行动', 'actions')
+    heading('简历版本与投递安排', 'actions')
     for variant in data.get('resume_variants', []) if isinstance(data.get('resume_variants'), list) else []:
         if not isinstance(variant, dict):
             continue
@@ -385,29 +404,29 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
         paragraph(f"岗位 {action.get('job_id', '字段缺失')}；简历版本 {action.get('resume_variant_id', '字段缺失')}")
         paragraph(action.get('action', '字段缺失'))
         paragraph('材料：' + '；'.join(action.get('materials', []) if _strings(action.get('materials')) else []))
-    heading('待确认及排除记录', 'appendix')
+    heading('待确认与未推荐岗位', 'appendix')
     pending = [job for job in data['jobs'] if not job.get('selected') and job not in proposed]
     if not pending:
         paragraph('本次输入没有待确认或排除记录；这不表示全网没有其他岗位。')
     for job in pending:
         paragraph(f"{job['id']} · {job['company']} · {job['title']}", 'Heading 2')
-        paragraph(f"状态：{job['status']}；资格：{job['eligibility']}；原因：{job['reason']}")
+        paragraph(f"招聘状态：{_display(job['status'])}；申请条件：{_display(job['eligibility'])}；原因：{job['reason']}")
         link(paragraph(''), '待确认或排除岗位 JD', job['jd_url'])
         for req in job['requirements']:
-            paragraph(f"{req['text']} | {req['result']} | {req['jd_evidence']} | {req['candidate_evidence']}")
+            paragraph(f"{req['text']} | {_display(req['result'])} | {req['jd_evidence']} | {req['candidate_evidence']}")
             paragraph(refs(req.get('evidence_refs', [])) or '没有已确认引用。')
     represented = {job.get('corpus_id') for job in data['jobs'] if isinstance(job.get('corpus_id'), str)}
     for row in data['corpus']['records']:
         if row['corpus_id'] in represented:
             continue
-        paragraph(f"未入主清单语料：{row['corpus_id']} · {row['title']}", 'Heading 2')
-        paragraph(f"来源状态：{row['status']}；可比较：{row['comparable']}；完整 JD：{row['full_jd']}")
+        paragraph(f"未列入推荐的岗位资料：{row['corpus_id']} · {row['title']}", 'Heading 2')
+        paragraph(f"招聘状态：{_display(row['status'])}；纳入同批比较：{_display(row['comparable'])}；已取得完整 JD：{_display(row['full_jd'])}")
         paragraph('记录原因：' + (row.get('excluded_reason') or '本次未生成对应岗位分析，不作为可投结论。'))
-        link(paragraph(''), '语料来源 JD', row['jd_url'])
-    heading('简历证据账本', 'ledger')
+        link(paragraph(''), '招聘页面', row['jd_url'])
+    heading('经历记录与材料出处', 'ledger')
     for item in ledger.values():
         paragraph(f"{item['id']} | {item['source_id']} | {item['locator']}", 'Heading 2')
-        paragraph(f"状态：{item['state']}；已确认：{item['confirmed']}")
+        paragraph(f"经历状态：{_display(item['state'])}；已确认：{_display(item['confirmed'])}")
         paragraph(item['text'])
     try:
         output.parent.mkdir(parents=True, exist_ok=True)

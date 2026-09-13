@@ -2,7 +2,8 @@
   "verified_at": "2026-09-13",
   "runtime_version": "0.1.0",
   "scope": "Implementation and smoke tests, not a job-search effectiveness study. No private resume was used.",
-  "automated_tests": {"legacy":39,"runtime":119,"total":158,"status":"passed","fixtures":"Synthetic data, SDK doubles and local HTTP contracts; no live-service effectiveness claim"},
+  "automated_tests": {"legacy":39,"runtime":122,"total":161,"status":"passed","fixtures":"Synthetic data, SDK doubles and local HTTP contracts; no live-service effectiveness claim"},
+  "wording_revision": {"prompt_version":"1.1","scope":"Reader-facing documentation, report labels and model writing guidance; schemas and qualification checks unchanged","regressions":"Controlled labels translated; source and resume quotations unchanged; input data unchanged; completed, planned and unconfirmed states remain distinct","visual_check":"Four-page synthetic single-company Word sample rendered and inspected; no overlap observed. The 20-company rendering below is the earlier c627b89 layout baseline.","live_model_rerun":false},
   "word_validation": {"synthetic_companies":20,"resume_structures":3,"rendered_pdf_pages":40,"empty_pages":0,"ooxml_shading_nodes":0,"note":"Internal rendering only; no candidate report or PDF published. All 40 final rendered pages inspected in contact sheets; first page also checked at readable size after monochrome correction. No overlap or blank pages observed in this synthetic fixture."},
   "components": [
     {"id":"onet_database","implementation":"adapter_implemented","contract_tested":true,"live_status":"passed_official_download","dataset_rows":1016,"version":"31.0","source_sha256":"a09eae1d6609686e44e05b7290993a1c8b523d8ca224bc0eedc194c855c3ee02"},
@@ -19,6 +20,7 @@
     {"id":"tgre_classification","implementation":"adapter_implemented","contract_tested":true,"live_status":"passed_upstream_metrics_smoke","version":"91fccb7a513edc8e069491052bf5979f7cac4525","synthetic_instances":2,"precision_at_1":[1.0,0.0],"note":"Actually imported pinned upstream metric functions. This is supplied-prediction scoring, not model inference or benchmark effectiveness."}
   ],
   "orchestration": {
+    "prompt_version": "1.0",
     "live_transport": "codex_cli",
     "input": "explicitly synthetic candidate evidence and JD; source fetch injected for this test",
     "roles_called": ["SourceScout","EvidenceMapper","Auditor"],

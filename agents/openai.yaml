@@ -1,4 +1,4 @@
 interface:
   display_name: "社科岗位匹配与分析"
-short_description: "按招聘模式建立证据语料，再核验20家可投岗位"
-default_prompt: "Use $social-science-job-match to confirm my employment mode, build an auditable evidence corpus, and produce an evidence-backed report of currently open roles with JD-specific resume revisions."
+  short_description: "区分实习与全职，查找20家公司岗位，并按招聘要求提供简历修改建议"
+  default_prompt: "Use $social-science-job-match to confirm my employment mode, check current job listings against my resume, and prepare a report with suitable roles, source links, and job-specific resume revisions."

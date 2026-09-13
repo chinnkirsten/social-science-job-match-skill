@@ -1,0 +1,4 @@
+interface:
+  display_name: "社科岗位匹配与分析"
+short_description: "按招聘模式建立证据语料，再核验20家可投岗位"
+default_prompt: "Use $social-science-job-match to confirm my employment mode, build an auditable evidence corpus, and produce an evidence-backed report of currently open roles with JD-specific resume revisions."

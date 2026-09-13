@@ -2,32 +2,282 @@
   "verified_at": "2026-09-13",
   "runtime_version": "0.1.0",
   "scope": "Implementation and smoke tests, not a job-search effectiveness study. No private resume was used.",
-  "automated_tests": {"legacy":39,"runtime":122,"total":161,"status":"passed","fixtures":"Synthetic data, SDK doubles and local HTTP contracts; no live-service effectiveness claim"},
-  "wording_revision": {"prompt_version":"1.1","scope":"Reader-facing documentation, report labels and model writing guidance; schemas and qualification checks unchanged","regressions":"Controlled labels translated; source and resume quotations unchanged; input data unchanged; completed, planned and unconfirmed states remain distinct","visual_check":"Four-page synthetic single-company Word sample rendered and inspected; no overlap observed. The 20-company rendering below is the earlier c627b89 layout baseline.","live_model_rerun":false},
-  "word_validation": {"synthetic_companies":20,"resume_structures":3,"rendered_pdf_pages":40,"empty_pages":0,"ooxml_shading_nodes":0,"note":"Internal rendering only; no candidate report or PDF published. All 40 final rendered pages inspected in contact sheets; first page also checked at readable size after monochrome correction. No overlap or blank pages observed in this synthetic fixture."},
+  "automated_tests": {
+    "legacy": 39,
+    "runtime": 161,
+    "total": 200,
+    "status": "passed",
+    "fixtures": "Synthetic records, local HTTP contracts, real temporary PDF/DOCX parsing; no effectiveness claim"
+  },
+  "wording_revision": {
+    "prompt_version": "1.1",
+    "scope": "Reader-facing documentation, report labels and model writing guidance; schemas and qualification checks unchanged",
+    "regressions": "Controlled labels translated; source and resume quotations unchanged; input data unchanged; completed, planned and unconfirmed states remain distinct",
+    "visual_check": "Four-page synthetic single-company Word sample rendered and inspected; no overlap observed. The 20-company rendering below is the earlier c627b89 layout baseline.",
+    "live_model_rerun": false
+  },
+  "word_validation": {
+    "synthetic_companies": 20,
+    "resume_structures": 3,
+    "rendered_pdf_pages": 40,
+    "empty_pages": 0,
+    "ooxml_shading_nodes": 0,
+    "note": "Internal rendering only; no candidate report or PDF published. All 40 final rendered pages inspected in contact sheets; first page also checked at readable size after monochrome correction. No overlap or blank pages observed in this synthetic fixture."
+  },
   "components": [
-    {"id":"onet_database","implementation":"adapter_implemented","contract_tested":true,"live_status":"passed_official_download","dataset_rows":1016,"version":"31.0","source_sha256":"a09eae1d6609686e44e05b7290993a1c8b523d8ca224bc0eedc194c855c3ee02"},
-    {"id":"esco","implementation":"adapter_implemented","contract_tested":true,"live_status":"blocked_network_safety","note":"The local proxy resolves this host to a reserved address rejected by the URL safety guard. This is not evidence that the ESCO service is down."},
-    {"id":"docling","implementation":"adapter_implemented","contract_tested":true,"live_status":"not_run_missing_sdk","note":"SDK test doubles only; no model download. Optional fixed-commit installer supplied."},
-    {"id":"crawl4ai","implementation":"adapter_implemented","contract_tested":true,"live_status":"not_run_missing_sdk_and_browser","note":"SDK test doubles only. Browser dependencies and allowed network are operator prerequisites."},
-    {"id":"tabiya_open_dataset","implementation":"adapter_implemented","contract_tested":true,"live_status":"passed_official_download","dataset_rows":13896,"version":"815c85d4be9b059c927156d2819e41e904d1d442","source_sha256":"c5f8f694fcc8370f63ef23173872b5575b61437af7a95b4ada74d23a086f906b"},
-    {"id":"tabiya_livelihoods_classifier","implementation":"adapter_implemented","contract_tested":true,"live_status":"not_run_service_not_provisioned","note":"Pinned upstream protocol exercised against a local contract server, not a deployed classifier."},
-    {"id":"esco_skill_extractor","implementation":"adapter_implemented","contract_tested":true,"live_status":"not_run_service_and_models_not_provisioned","note":"Asynchronous occupation and skills protocol tested locally; no real model extraction evaluated."},
-    {"id":"tabiya_compass","implementation":"adapter_implemented","contract_tested":true,"live_status":"not_run_service_and_session_not_provisioned","note":"Conversation protocol tested locally. Requires explicit opt-in; private data consent is separate."},
-    {"id":"resume_matcher","implementation":"adapter_implemented","contract_tested":true,"live_status":"not_run_service_and_records_not_provisioned","note":"Preview protocol tested locally; adapter does not upload, save or apply resume changes."},
-    {"id":"jobspy","implementation":"adapter_implemented","contract_tested":true,"live_status":"not_run_missing_sdk","note":"SDK test doubles only. Discovery results are never treated as confirmed vacancies."},
-    {"id":"melo_benchmark","implementation":"adapter_implemented","contract_tested":true,"live_status":"blocked_runtime_dependencies","note":"Pinned upstream trec_eval executable is Linux x86_64; the test host is macOS. No full benchmark executed."},
-    {"id":"tgre_classification","implementation":"adapter_implemented","contract_tested":true,"live_status":"passed_upstream_metrics_smoke","version":"91fccb7a513edc8e069491052bf5979f7cac4525","synthetic_instances":2,"precision_at_1":[1.0,0.0],"note":"Actually imported pinned upstream metric functions. This is supplied-prediction scoring, not model inference or benchmark effectiveness."}
+    {
+      "id": "onet_database",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "passed_official_download",
+      "dataset_rows": 1016,
+      "version": "31.0",
+      "source_sha256": "a09eae1d6609686e44e05b7290993a1c8b523d8ca224bc0eedc194c855c3ee02",
+      "publication_summary": "此前已实际下载官方职业数据，1016条；不是当前招聘数据或求职效果评估。"
+    },
+    {
+      "id": "esco",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "blocked_network_safety",
+      "note": "The local proxy resolves this host to a reserved address rejected by the URL safety guard. This is not evidence that the ESCO service is down.",
+      "publication_summary": "当前环境的代理解析到保留地址，被安全检查拒绝；未绕过限制，不说明官方服务失效。"
+    },
+    {
+      "id": "docling",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "synthetic_adapter_smoke_passed",
+      "note": "Text-based synthetic PDF only; no OCR, scanned-resume or candidate effectiveness evaluation.",
+      "publication_summary": "已在本机可复用隔离环境安装固定提交，依赖检查通过；真实适配器解析合成文本PDF成功。未验证OCR、扫描简历或匹配效果。",
+      "installed_version": "2.126.0"
+    },
+    {
+      "id": "crawl4ai",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "synthetic_browser_sdk_smoke_passed",
+      "note": "Synthetic raw HTML only; this does not establish public-site access, robots acceptance, or live JD collection.",
+      "publication_summary": "已在本机隔离环境安装固定提交与浏览器，合成HTML提取和Chromium页面读取通过。未完成真实招聘网站的适配器采集验证。",
+      "installed_version": "0.9.3"
+    },
+    {
+      "id": "tabiya_open_dataset",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "passed_official_download",
+      "dataset_rows": 13896,
+      "version": "815c85d4be9b059c927156d2819e41e904d1d442",
+      "source_sha256": "c5f8f694fcc8370f63ef23173872b5575b61437af7a95b4ada74d23a086f906b",
+      "publication_summary": "此前已实际下载固定版本技能CSV，13896条；不是实时岗位信息。"
+    },
+    {
+      "id": "tabiya_livelihoods_classifier",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "not_run_service_not_provisioned",
+      "note": "Pinned upstream protocol exercised against a local contract server, not a deployed classifier.",
+      "publication_summary": "调用代码和本地协议测试已完成；真实分类服务与模型尚未部署。"
+    },
+    {
+      "id": "esco_skill_extractor",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "not_run_service_and_models_not_provisioned",
+      "note": "Asynchronous occupation and skills protocol tested locally; no real model extraction evaluated.",
+      "publication_summary": "异步接口协议已测试；实际服务、技能资料、嵌入与Ollama模型尚未准备。"
+    },
+    {
+      "id": "tabiya_compass",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "not_run_service_and_session_not_provisioned",
+      "note": "Conversation protocol tested locally. Requires explicit opt-in; private data consent is separate.",
+      "publication_summary": "会话接口协议已测试；实际服务、模型与会话未准备。调用可能保存经历，需单独授权。"
+    },
+    {
+      "id": "resume_matcher",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "not_run_service_and_records_not_provisioned",
+      "note": "Preview protocol tested locally; adapter does not upload, save or apply resume changes.",
+      "publication_summary": "预览接口协议已测试；实际服务和已有简历/岗位记录未准备。不自动上传或保存改写。"
+    },
+    {
+      "id": "jobspy",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "sdk_import_and_model_smoke_passed",
+      "note": "No platform scraping was attempted; applicable platform terms and live result retrieval remain to be verified.",
+      "publication_summary": "已在本机隔离环境安装固定提交，实际导入和数据模型测试通过。未请求招聘平台，平台访问与结果尚待验证。",
+      "installed_version": "1.1.82"
+    },
+    {
+      "id": "melo_benchmark",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "blocked_runtime_dependencies",
+      "note": "Pinned upstream trec_eval executable is Linux x86_64; the test host is macOS. No full benchmark executed.",
+      "publication_summary": "固定版本所带评估二进制为Linux x86_64；当前macOS环境未完成兼容部署与完整评估。"
+    },
+    {
+      "id": "tgre_classification",
+      "implementation": "adapter_implemented",
+      "contract_tested": true,
+      "live_status": "passed_upstream_metrics_smoke",
+      "version": "91fccb7a513edc8e069491052bf5979f7cac4525",
+      "synthetic_instances": 2,
+      "precision_at_1": [
+        1,
+        0
+      ],
+      "note": "Actually imported pinned upstream metric functions. This is supplied-prediction scoring, not model inference or benchmark effectiveness.",
+      "publication_summary": "此前已调用固定上游评分函数，使用2条合成预测；不是模型推理或完整基准评估。"
+    }
   ],
   "orchestration": {
     "prompt_version": "1.0",
     "live_transport": "codex_cli",
     "input": "explicitly synthetic candidate evidence and JD; source fetch injected for this test",
-    "roles_called": ["SourceScout","EvidenceMapper","Auditor"],
-    "elapsed_seconds": [13.86,28.308,17.824],
+    "roles_called": [
+      "SourceScout",
+      "EvidenceMapper",
+      "Auditor"
+    ],
+    "elapsed_seconds": [
+      13.86,
+      28.308,
+      17.824
+    ],
     "word_draft_written": true,
     "confirmed_companies": 0,
     "note": "Auditor rejected unsupported full-time, completeness and application-path claims. The pipeline preserved these objections and did not promote the synthetic vacancy. Draft-to-human-review-to-formal flow is separately covered by deterministic tests."
   },
-  "effectiveness_evaluation": "not_performed"
+  "effectiveness_evaluation": "not_performed",
+  "preparation_revision": {
+    "implemented": [
+      "local_resume_intake",
+      "bounded_one_level_link_discovery",
+      "human_confirmation_bound_export",
+      "five_dimension_readiness",
+      "explicit_optional_availability_degradation"
+    ],
+    "not_implemented": [
+      "general_web_search_provider",
+      "automatic_dynamic_JD_fallback",
+      "automatic_OCR",
+      "full_real_candidate_effectiveness_evaluation"
+    ],
+    "verification": "20 preparation tests, 11 readiness tests, 7 optional degradation tests included in runtime suite; real website discovery not evaluated"
+  },
+  "sdk_installation": {
+    "verified_date": "2026-09-13",
+    "scope": "Three separate reusable isolated SDK environments; not a unified production deployment.",
+    "default_enabled_changed": false,
+    "personal_data_processed": false,
+    "remote_model_services_provisioned": false,
+    "components": [
+      {
+        "component_id": "docling",
+        "verified_date": "2026-09-13",
+        "environment": "isolated macOS arm64 Python 3.12 environment",
+        "persistent_reusable_environment": true,
+        "installed_provenance": {
+          "distribution": "docling-slim",
+          "version": "2.126.0",
+          "source": "https://github.com/docling-project/docling",
+          "commit_id": "5ea6490ffdc57b2fd7de5cc436f2d0a22f2214d4",
+          "commit_verified": true
+        },
+        "candidate_data_used": false,
+        "model_downloads": false,
+        "effectiveness_evaluated": false,
+        "status": "synthetic_adapter_smoke_passed",
+        "adapter_live_verified": true,
+        "extracted_characters": 161,
+        "expected_tokens_found": [
+          "Accounting",
+          "2027",
+          "120",
+          "Excel"
+        ],
+        "limitations": [
+          "Text-based synthetic PDF only; no OCR, scanned-resume or candidate effectiveness evaluation."
+        ],
+        "elapsed_seconds": 117.501,
+        "dependency_check": "passed",
+        "passive_readiness_check": {
+          "installed": true,
+          "enabled": false,
+          "configured": true,
+          "live_operation_verified": null
+        },
+        "persistent_production_deployment": false
+      },
+      {
+        "component_id": "crawl4ai",
+        "verified_date": "2026-09-13",
+        "environment": "isolated macOS arm64 Python 3.12 environment",
+        "persistent_reusable_environment": true,
+        "installed_provenance": {
+          "distribution": "Crawl4AI",
+          "version": "0.9.3",
+          "source": "https://github.com/unclecode/crawl4ai",
+          "commit_id": "862f6bccb9c063f49b9d42701baa0eea17a4993f",
+          "commit_verified": true
+        },
+        "candidate_data_used": false,
+        "model_downloads": false,
+        "effectiveness_evaluated": false,
+        "status": "synthetic_browser_sdk_smoke_passed",
+        "adapter_live_verified": false,
+        "browser_runtime_verified": true,
+        "browser_version": "151.0.7922.34",
+        "extracted_characters": 76,
+        "limitations": [
+          "Synthetic raw HTML only; this does not establish public-site access, robots acceptance, or live JD collection."
+        ],
+        "elapsed_seconds": 78.367,
+        "dependency_check": "passed",
+        "passive_readiness_check": {
+          "installed": true,
+          "enabled": false,
+          "configured": false,
+          "live_operation_verified": null
+        },
+        "persistent_production_deployment": false
+      },
+      {
+        "component_id": "jobspy",
+        "verified_date": "2026-09-13",
+        "environment": "isolated macOS arm64 Python 3.12 environment",
+        "persistent_reusable_environment": true,
+        "installed_provenance": {
+          "distribution": "python-jobspy",
+          "version": "1.1.82",
+          "source": "https://github.com/speedyapply/JobSpy",
+          "commit_id": "fda080a373e8226f3fd60635323f5da9af9892b1",
+          "commit_verified": true
+        },
+        "candidate_data_used": false,
+        "model_downloads": false,
+        "effectiveness_evaluated": false,
+        "status": "sdk_import_and_model_smoke_passed",
+        "adapter_live_verified": false,
+        "external_platform_request": false,
+        "limitations": [
+          "No platform scraping was attempted; applicable platform terms and live result retrieval remain to be verified."
+        ],
+        "elapsed_seconds": 93.853,
+        "dependency_check": "passed",
+        "passive_readiness_check": {
+          "installed": true,
+          "enabled": false,
+          "configured": false,
+          "live_operation_verified": null
+        },
+        "persistent_production_deployment": false
+      }
+    ]
+  }
 }

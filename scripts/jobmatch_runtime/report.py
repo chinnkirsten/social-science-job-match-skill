@@ -342,6 +342,8 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
         paragraph('本次自动分析步骤：' + '、'.join(_display(c.get('role', 'unknown')) for c in calls))
     for adapter in execution.get('adapters', []):
         paragraph(f"本次使用工具：{adapter.get('component_id')}；版本：{adapter.get('upstream_version')}；使用时间：{adapter.get('invoked_at')}；复用已保存结果：{_display(adapter.get('cache_hit'))}")
+    for warning in execution.get('warnings', []):
+        paragraph(f"补充工具未运行成功：{warning.get('component_id')}；岗位编号：{warning.get('source_id')}。{warning.get('impact', '')}")
     for source in basis['market_sources']:
         p = paragraph(f"{source['name']} | {_display(source['source_tier'])} | {source['records']} 条 | ")
         link(p, '来源', source['url'])

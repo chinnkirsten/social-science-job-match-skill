@@ -6,6 +6,10 @@
 
 先读 [可执行运行手册](references/runtime-guide.md)。默认不启用第三方组件、不允许私人候选资料出站；按需配置模型、服务和依赖。招聘模式必须先选实习、应届全职或社招全职。
 
+首次输入可使用 [简历与岗位入口准备](references/preparation-entry.md)：本地提取 PDF、DOCX 或文本简历，从指定公开招聘入口发现链接，分别经过人工确认后导出运行所需文件。它是有范围限制、保留人工确认的准备流程，不是通用全网搜索或自动投递。
+
+运行前用 [上游运行条件检查](references/deployment-checks.md) 区分已安装、已配置、可访问、实际调用与效果评估。检查不会自行部署、启用模型或替代业务验证；历史验证单列日期。可选补充工具可明确设置 `on_failure: "continue"`，仅对约定的可用性故障继续，报告保留缺失说明；隐私、地址安全和无效输出仍停止处理。
+
 ## 报告依据与当前实现
 
 - 每个“可投”结论都回到具体 JD 和经历编号。
@@ -43,6 +47,8 @@ python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
 python scripts/run_job_match.py doctor
+python scripts/check_runtime.py
+python scripts/prepare_job_match.py --help
 python3 scripts/validate_integrations.py integrations/open_source_stack.json
 python3 scripts/build_evidence_basis.py corpus.json --output evidence-new.json
 python3 scripts/validate_jobs.py jobs.json

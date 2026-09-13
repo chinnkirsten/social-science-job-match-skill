@@ -19,6 +19,14 @@ READY = {"python_version": "3.11.0", "python_compatible": True, "pip_available":
 
 
 class OptionalInstallerTest(unittest.TestCase):
+    def test_docling_installs_model_free_format_dependencies(self):
+        result = installer.install("docling")
+        target = result["command"][-1]
+        self.assertTrue(target.startswith("docling-slim[convert-core,format-pdf,format-docx,format-web] @ git+"))
+        self.assertIn("@5ea6490ffdc57b2fd7de5cc436f2d0a22f2214d4", target)
+        self.assertNotIn("models-local", target)
+        self.assertNotIn("feat-ocr", target)
+
     def test_default_cli_is_dry_run(self):
         with patch.object(installer.subprocess, "run") as run, contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(installer.main(["jobspy"]), 0)

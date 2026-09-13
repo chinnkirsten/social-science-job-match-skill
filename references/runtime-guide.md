@@ -14,7 +14,13 @@
 
 ## 2. 安装基础运行环境
 
+从简历文件开始，先读[输入准备流程](preparation-entry.md)，完成本地提取、经历确认、指定招聘入口的链接发现和来源确认；之后得到本手册所需的三个输入文件。新入口不替代搜索服务，也不自动确认在招状态。
+
+需要排查上游条件时，使用[运行条件检查](deployment-checks.md)和 `python scripts/check_runtime.py`。默认只做被动检查；`--live` 只访问明确指定的只读健康路径，不执行模型任务，也不把HTTP响应当作模型可用。
+
 建议 Python 3.10 或以上。基础流水线需要 Python 标准库和 `python-docx`；Word 依赖已固定在 `requirements.txt`。模型服务、浏览器、OCR 和第三方数据集不包含在这个安装步骤中。
+
+本地 PDF 输入准备另需 `pypdf`，也固定在基础依赖中。文本和 Word 解析不使用 OCR；扫描件须另行处理后核对。
 
 ```bash
 python3 -m venv ../jobmatch-venv
@@ -44,6 +50,8 @@ python scripts/install_optional.py docling --execute
 安装后的 `installed_verified` 要求 pip 成功、PEP 610 元数据中的来源与提交吻合、`pip check` 通过；`installed_unverified` 不能当成已验收安装。传递依赖仍由 pip 解析，这不是完整依赖锁定。实际模型效果仍显示未评估。其他 9 项交给版本化数据读取或人工部署，安装助手会返回 `manual_provisioning_required`。
 
 ## 3. 把运行材料放在仓库之外
+
+补充组件的 `adapter_steps` 可配置 `on_failure: "continue"`，默认仍是 `stop`。只有缺少依赖、模型/服务未就绪、网络错误、429和特定5xx等可用性故障允许继续；警告写入报告并关联岗位编号。隐私授权、SSRF、凭据、输出结构或原文引用问题仍停止该岗位处理。缺少补充工具不改变招聘状态和资格门槛。
 
 建议目录关系：
 

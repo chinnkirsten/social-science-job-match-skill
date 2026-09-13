@@ -87,6 +87,33 @@ def _configuration(config, ledger, specs):
         elif isinstance(value, list):
             for v in value: secrets(v)
     secrets(config)
+    for step in config.get('adapter_steps', []):
+        if not isinstance(step, dict) or not isinstance(step.get('component'), str) or not isinstance(step.get('input'), dict):
+            raise AdapterError('invalid_config', 'Adapter steps require component and input object')
+        if step.get('on_failure', 'stop') not in ('stop', 'continue'):
+            raise AdapterError('invalid_config', 'Adapter on_failure must be stop or continue')
+
+
+def _enrich(steps, context, config, cache):
+    """Only explicit optional availability failures may degrade; safety failures never do."""
+    results, warnings = [], []
+    availability = {'missing_dependency', 'missing_sdk', 'dependency_missing', 'network_error',
+                    'http_429', 'http_500', 'http_502', 'http_503', 'http_504', 'service_not_ready',
+                    'model_not_ready', 'models_not_ready'}
+    for step in steps:
+        component = step['component']
+        payload = _bind_payload(step['input'], context)
+        if '$candidate' in json.dumps(step['input']):
+            payload['data_classification'] = 'private'
+        try:
+            results.append(invoke(component, payload, config.get('adapters', {}).get(component, {}), cache))
+        except AdapterError as exc:
+            if step.get('on_failure') != 'continue' or exc.code.lower() not in availability:
+                raise
+            warnings.append({'component_id': component, 'error_code': exc.code,
+                             'source_id': context.get('job_id') or fingerprint(canonical_url(context['source']['url']))[:20],
+                             'impact': '本岗位未使用该工具的补充分析；招聘状态、申请条件与简历表述仍须复核。'})
+    return results, warnings
 
 
 def _bind_payload(template, context):
@@ -146,13 +173,8 @@ def _one(spec, config, ledger, cache, model, loader):
         record['excluded_reason'] = '岗位关闭、开放状态未知或 JD 不完整'
         return {'record': record}
     record['comparable'] = True
-    enrichments = []
-    for step in config.get('adapter_steps', []):
-        component = step['component']
-        payload = _bind_payload(step['input'], {'source': source, 'scout': extracted, 'candidate': ledger})
-        if '$candidate' in json.dumps(step['input']):
-            payload['data_classification'] = 'private'
-        enrichments.append(invoke(component, payload, config.get('adapters', {}).get(component, {}), cache))
+    enrichments, warnings = _enrich(config.get('adapter_steps', []),
+                                  {'source': source, 'scout': extracted, 'candidate': ledger, 'job_id': ident}, config, cache)
     mapped = model.call('EvidenceMapper', prompts.MAPPER, {'source': source, 'jd': extracted,
                         'candidate_evidence': ledger, 'enrichments': enrichments}, private=True)
     proposed = mapped.get('requirements')
@@ -195,7 +217,7 @@ def _one(spec, config, ledger, cache, model, loader):
            'open_evidence': evidence, 'hard_requirements_reviewed': False, 'requirements': merged,
            'mappings': mapped.get('mappings', []), 'rewrites': rewrites, 'details': extracted.get('details', {}),
            'reason': '机器分析通过，待人工读源复核' if selectable else '；'.join(map(str, audit['issues'])) or mapped.get('reason') or '条件或申请路径未确认'}
-    return {'record': record, 'job': job, 'model_audit': audit, 'variant': mapped.get('resume_variant'),
+    return {'record': record, 'job': job, 'model_audit': audit, 'variant': mapped.get('resume_variant'), 'warnings': warnings,
             'action': mapped.get('action'), 'adapters': [{k: e[k] for k in ('component_id', 'upstream_version', 'invoked_at', 'cache_hit')} for e in enrichments]}
 
 
@@ -289,7 +311,8 @@ def _run(config, ledger, specs, directory, *, model=None, loader=None):
               'report_summary': f'机器分析草稿。读取来源 {len(specs)} 项；生成岗位分析 {len(jobs)} 项。尚未人工核验，已确认可投为 0 家。',
               'resume_variants': [], 'action_plan': [], 'execution': {'model_calls': model.calls,
               'cache': cache.stats(), 'resumed_jobs': len(specs)-len(pending), 'fresh_jobs': len(pending),
-              'adapters': [a for item in completed for a in item.get('adapters', [])]}}
+              'adapters': [a for item in completed for a in item.get('adapters', [])],
+              'warnings': [w for item in completed for w in item.get('warnings', [])]}}
     for item in completed:
         job = item.get('job')
         if not job or not job['proposed_selection']:

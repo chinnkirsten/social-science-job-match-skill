@@ -13,7 +13,8 @@ import sys
 
 REGISTRY = Path(__file__).resolve().parents[1] / "integrations/open_source_stack.json"
 INSTALLABLE = {
-    "docling": {"source": "https://github.com/docling-project/docling", "distribution": "docling-slim", "python_max": (4, 0)},
+    "docling": {"source": "https://github.com/docling-project/docling", "distribution": "docling-slim", "python_max": (4, 0),
+                "extras": "convert-core,format-pdf,format-docx,format-web"},
     "crawl4ai": {"source": "https://github.com/unclecode/crawl4ai", "distribution": "Crawl4AI", "python_max": None},
     "jobspy": {"source": "https://github.com/speedyapply/JobSpy", "distribution": "python-jobspy", "python_max": (4, 0)},
 }
@@ -83,6 +84,11 @@ def install(component, *, execute=False, registry_path=REGISTRY, timeout=900):
                 "message": "This data/service/evaluation component is not installed with pip by this helper. Follow its upstream deployment or versioned-data instructions."}
     checks = requirements(component)
     target = "git+" + record["source"] + "@" + record["pin"]
+    extras = INSTALLABLE[component].get("extras")
+    if extras:
+        # The slim base does not include the model-free PDF/DOCX/web backends
+        # used by our adapter. Keep OCR and model bundles explicitly excluded.
+        target = INSTALLABLE[component]["distribution"] + "[" + extras + "] @ " + target
     arguments = ["-m", "pip", "install", "--disable-pip-version-check", "--no-input", target]
     result = {**base, "requirements": checks, "source": record["source"], "source_pin": record["pin"],
               "command": ["<current-python>"] + arguments,

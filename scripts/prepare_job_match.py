@@ -7,7 +7,8 @@ from pathlib import Path
 
 from jobmatch_runtime.cache import Cache
 from jobmatch_runtime.common import AdapterError, atomic_json, private_dir
-from jobmatch_runtime.preparation import prepare_resume, confirm_resume, discover_links, confirm_sources, prepared_bundle
+from jobmatch_runtime.preparation import (prepare_resume, confirm_resume, discover_links,
+    confirm_sources, prepared_bundle, build_search_plan, import_search_results)
 
 
 def read(path):
@@ -36,6 +37,13 @@ def main(argv=None):
     discover.add_argument('--config', required=True)
     discover.add_argument('--cache-dir', required=True)
     discover.add_argument('--output', required=True)
+    plan = sub.add_parser('plan')
+    plan.add_argument('--intake', required=True)
+    plan.add_argument('--output', required=True)
+    search_results = sub.add_parser('search-results')
+    search_results.add_argument('--results', required=True)
+    search_results.add_argument('--intake', required=True)
+    search_results.add_argument('--output', required=True)
     export = sub.add_parser('export')
     for name in ('resume-draft', 'resume-review', 'source-draft', 'source-review', 'config', 'output-dir'):
         export.add_argument('--' + name, required=True)
@@ -53,6 +61,15 @@ def main(argv=None):
             atomic_json(args.output, result)
             summary = {'status': result['status'], 'draft_sha256': result['draft_sha256'],
                        'parsed_records': len(result['proposed_records'])}
+        elif args.command == 'plan':
+            result = build_search_plan(read(args.intake))
+            atomic_json(args.output, result)
+            summary = {'status': result['status'], 'queries': len(result['queries'])}
+        elif args.command == 'search-results':
+            result = import_search_results(read(args.results), read(args.intake))
+            atomic_json(args.output, result)
+            summary = {'status': result['status'], 'draft_sha256': result['draft_sha256'],
+                       'unverified_links': len(result['candidate_links']), 'truncated': result['truncated']}
         elif args.command == 'discover':
             result = discover_links(read(args.seeds), read(args.config), Cache(args.cache_dir))
             atomic_json(args.output, result)
@@ -65,7 +82,7 @@ def main(argv=None):
             specs = confirm_sources(source_draft, read(args.source_review))
             if source_draft['intake'] != intake:
                 raise AdapterError('intake_mismatch', 'Resume and discovery recruitment scope must match')
-            bundle = prepared_bundle(candidate, intake, specs, read(args.config))
+            bundle = prepared_bundle(candidate, intake, specs, read(args.config), source_draft)
             output = Path(args.output_dir)
             if output.exists():
                 raise AdapterError('output_exists', 'Use a new output directory; existing artifacts are not overwritten')

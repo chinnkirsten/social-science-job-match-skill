@@ -1,7 +1,9 @@
 """Local intake and bounded discovery, with explicit human approval before export.
 
-This module does not discover the whole web, infer employment mode from a
-degree, approve vacancies, or interpret model output as human confirmation.
+This module does not call a general web-search provider, infer employment mode
+from a degree, approve vacancies, or interpret model output as human confirmation.
+It can create a reproducible search plan and ingest results returned by an
+authorized search tool before the existing human source review.
 """
 import copy
 import hashlib
@@ -34,7 +36,7 @@ def _no_inline_credentials(value):
             _no_inline_credentials(child)
 
 
-def validate_intake(intake):
+def validate_intake(intake, *, require_directions=False):
     _require(isinstance(intake, dict) and intake.get('employment_mode') in MODES,
              'mode_required', 'Choose internship, campus_full_time or experienced_full_time explicitly')
     cities = intake.get('locations')
@@ -44,7 +46,15 @@ def validate_intake(intake):
     _require(season in {'autumn', 'spring', 'unspecified'}, 'invalid_season', 'Invalid recruitment season')
     _require(season == 'unspecified' or intake['employment_mode'] == 'campus_full_time',
              'season_mode_conflict', 'Campus recruitment season requires campus_full_time mode')
+    directions = intake.get('target_directions', [])
+    _require(isinstance(directions, list) and all(isinstance(v, str) and v.strip() for v in directions)
+             and len(directions) == len(set(v.strip() for v in directions)),
+             'invalid_directions', 'target_directions must be unique nonempty strings')
+    if require_directions:
+        _require(1 <= len(directions) <= 5, 'directions_required',
+                 'Confirm one to five target directions before discovering jobs')
     return {'employment_mode': intake['employment_mode'], 'locations': cities,
+            'target_directions': [v.strip() for v in directions],
             'recruitment_season': season,
             'graduation_date': intake.get('graduation_date', '待确认'),
             'availability': intake.get('availability', '待确认'),
@@ -136,6 +146,66 @@ def prepare_resume(path, intake, config=None, *, use_model=False):
     return draft
 
 
+def build_search_plan(intake):
+    """Build bounded, repeatable queries; a caller must execute them with an authorized search tool."""
+    scope = validate_intake(intake, require_directions=True)
+    mode_terms = {
+        'internship': '实习 internship',
+        'campus_full_time': '校招 应届 graduate',
+        'experienced_full_time': '社招 全职 experienced',
+    }
+    queries = []
+    for direction in scope['target_directions']:
+        for city in scope['locations']:
+            query = f'{city} {direction} {mode_terms[scope["employment_mode"]]} 招聘'
+            queries.append({'id': f'q-{len(queries) + 1:03d}', 'direction': direction,
+                            'location': city, 'query': query})
+    return {'kind': 'job_search_plan', 'version': 1, 'status': 'ready_for_authorized_search',
+            'created_at': utcnow(), 'intake': scope, 'queries': queries,
+            'instructions': '逐条使用可用的网络搜索工具；保留查询编号、结果标题、摘要和URL。搜索结果只是线索。'}
+
+
+def import_search_results(results, intake):
+    """Normalize web-search output into the same review-gated source draft used by index discovery."""
+    scope = validate_intake(intake, require_directions=True)
+    _require(isinstance(results, list), 'invalid_search_results', 'Search results must be a list')
+    plan = build_search_plan(scope)
+    by_id = {q['id']: q for q in plan['queries']}
+    maximum = intake.get('discovery_max_links', 100)
+    _require(type(maximum) is int and 1 <= maximum <= 300, 'discovery_limit',
+             'discovery_max_links must be 1..300')
+    leads, seen = [], set()
+    truncated = False
+    for item in results:
+        _require(isinstance(item, dict) and isinstance(item.get('query_id'), str)
+                 and item['query_id'] in by_id and isinstance(item.get('url'), str),
+                 'invalid_search_result', 'Every result needs a known query_id and URL')
+        parsed = urlsplit(item['url'])
+        _require(parsed.scheme == 'https' and bool(parsed.hostname), 'invalid_search_result',
+                 'Search result URLs must use HTTPS and include a host')
+        canonical = canonical_url(item['url'])
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        if len(leads) >= maximum:
+            truncated = True
+            continue
+        query = by_id[item['query_id']]
+        leads.append({'id': fingerprint(canonical)[:20], 'url': item['url'],
+                      'found_on': 'web_search:' + item['query_id'], 'captured_at': utcnow(),
+                      'status': 'unverified_link', 'target_direction': query['direction'],
+                      'target_location': query['location'],
+                      'result_title': str(item.get('title', ''))[:500],
+                      'result_snippet': str(item.get('snippet', ''))[:2000]})
+    draft = {'kind': 'source_preparation', 'version': 1, 'status': 'needs_human_review',
+             'created_at': utcnow(), 'intake': scope, 'candidate_links': leads,
+             'captures': [], 'failures': [], 'truncated': truncated,
+             'discovery_method': 'authorized_web_search_results',
+             'notice': '搜索结果只是线索。逐条打开具体 JD，核对招聘模式、地点、方向、来源和在招状态。'}
+    draft['draft_sha256'] = fingerprint(draft)
+    return draft
+
+
 def _review(draft, review, kind):
     _require(isinstance(draft, dict) and draft.get('kind') == kind, 'invalid_draft', 'Wrong preparation draft type')
     body = {k: v for k, v in draft.items() if k != 'draft_sha256'}
@@ -176,7 +246,7 @@ def confirm_resume(draft, review):
 
 def discover_links(seed_specs, config, cache):
     """One-level public index discovery; links are leads, never verified JDs."""
-    intake = validate_intake(config)
+    intake = validate_intake(config, require_directions=True)
     _no_inline_credentials(config)
     _require(isinstance(seed_specs, list) and 1 <= len(seed_specs) <= 10,
              'seed_limit', 'Provide 1 to 10 explicitly scoped public recruitment indexes')
@@ -204,8 +274,11 @@ def discover_links(seed_specs, config, cache):
             if len(leads) >= maximum:
                 truncated = True
                 continue
-            leads.append({'id': fingerprint(canonical)[:20], 'url': url, 'found_on': page['url'],
-                          'captured_at': page['captured_at'], 'status': 'unverified_link'})
+            lead = {'id': fingerprint(canonical)[:20], 'url': url, 'found_on': page['url'],
+                    'captured_at': page['captured_at'], 'status': 'unverified_link'}
+            if spec.get('target_direction') in intake['target_directions']:
+                lead['target_direction'] = spec['target_direction']
+            leads.append(lead)
     draft = {'kind': 'source_preparation', 'version': 1, 'status': 'needs_human_review',
              'created_at': utcnow(), 'intake': intake, 'candidate_links': leads,
              'captures': captures, 'failures': failures, 'truncated': truncated,
@@ -226,16 +299,39 @@ def confirm_sources(draft, review):
         _require(item.get('specific_jd_confirmed') is True and item.get('scope_confirmed') is True
                  and item.get('source_tier') in TIERS,
                  'source_review_required', 'Confirm a specific JD, recruitment scope and source tier; vacancy eligibility is not yet checked')
+        if known[item['id']].get('target_direction'):
+            _require(item.get('direction_confirmed') is True, 'source_review_required',
+                     'Confirm that the specific JD belongs to the recorded target direction')
         seen.add(item['id'])
-        output.append({'url': known[item['id']]['url'], 'source_tier': item['source_tier']})
+        spec = {'url': known[item['id']]['url'], 'source_tier': item['source_tier']}
+        if known[item['id']].get('target_direction'):
+            spec['target_direction'] = known[item['id']]['target_direction']
+        output.append(spec)
     return output
 
 
-def prepared_bundle(candidate, intake, specs, config):
+def prepared_bundle(candidate, intake, specs, config, discovery=None):
     """New entry point only exports confirmed artifacts; old raw CLI stays supported."""
     _require(candidate.get('preparation', {}).get('reviewed') is True, 'human_review_required', 'Use confirmed candidate output')
     _no_inline_credentials(config)
     result = copy.deepcopy(config)
-    result.update(validate_intake(intake))
+    result.update(validate_intake(intake, require_directions=True))
+    reviewed_hosts = sorted({urlsplit(spec['url']).hostname for spec in specs})
+    result['allowed_source_hosts'] = sorted(set(result.get('allowed_source_hosts', [])) | set(reviewed_hosts))
+    if discovery:
+        counts = {direction: 0 for direction in result['target_directions']}
+        for lead in discovery.get('candidate_links', []):
+            if lead.get('target_direction') in counts:
+                counts[lead['target_direction']] += 1
+        reviewed = {direction: sum(spec.get('target_direction') == direction for spec in specs)
+                    for direction in result['target_directions']}
+        result['discovery_summary'] = {
+            'method': discovery.get('discovery_method', 'bounded_index_discovery'),
+            'candidate_links': len(discovery.get('candidate_links', [])),
+            'reviewed_source_links': len(specs),
+            'candidate_links_by_direction': counts,
+            'reviewed_sources_by_direction': reviewed,
+            'truncated': discovery.get('truncated') is True,
+        }
     # Explicit approvals are not cryptographic signatures; only a human should author reviews.
     return {'config': result, 'candidate': candidate, 'sources': specs}

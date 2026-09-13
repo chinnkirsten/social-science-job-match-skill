@@ -7,10 +7,10 @@
 `intake.json` 的最低内容：
 
 ```json
-{"employment_mode":"campus_full_time","locations":["杭州","广州","深圳"],"recruitment_season":"autumn"}
+{"employment_mode":"campus_full_time","locations":["杭州","广州","深圳"],"target_directions":["财务分析","管理会计","审计"],"recruitment_season":"autumn"}
 ```
 
-招聘类型须由用户选定：`internship` 实习、`campus_full_time` 校招正式岗、`experienced_full_time` 社招正式岗。不能根据学历猜测。校招季可选 `autumn`、`spring`、`unspecified`；实习和社招只用 `unspecified`。毕业日期、到岗安排、最低薪酬可分别填写 `graduation_date`、`availability`、`minimum_pay`；未提供记待确认，不自动填“不限”。
+招聘类型须由用户选定：`internship` 实习、`campus_full_time` 校招正式岗、`experienced_full_time` 社招正式岗。不能根据学历猜测。`target_directions` 保存1—5个已确认职能方向；可以先解析简历再确认，但方向缺失时不得开始岗位发现。校招季可选 `autumn`、`spring`、`unspecified`；实习和社招只用 `unspecified`。毕业日期、到岗安排、最低薪酬可分别填写 `graduation_date`、`availability`、`minimum_pay`；未提供记待确认，不自动填“不限”。
 
 ```bash
 python scripts/prepare_job_match.py resume --resume resume.pdf --intake intake.json --output resume-draft.json
@@ -24,7 +24,18 @@ python scripts/prepare_job_match.py resume --resume resume.pdf --intake intake.j
 
 准备入口会拒绝将草稿、导出结果或缓存写进公开 Skill 目录，须选择仓库外的私有位置。该检查覆盖路径解析后的目标，不只是文件夹名称。
 
-## 2. 指定招聘入口，发现待核对链接
+## 2. 主动搜索或指定招聘入口
+
+从简历主动找岗时，按[主动岗位发现](active-discovery.md)先生成检索计划，用当前可用的网络搜索工具执行，再导入结果：
+
+```bash
+python scripts/prepare_job_match.py plan --intake intake.json --output search-plan.json
+python scripts/prepare_job_match.py search-results --results search-results.json --intake intake.json --output source-draft.json
+```
+
+这两步保留“方向 × 城市”的查询编号，但不内置通用搜索服务，也不伪造未执行的结果。导入的URL只是待复核线索。
+
+已知雇主或招聘入口时，也可以用下面的一层链接发现。
 
 `seeds.json` 是 1 至 10 个获准访问的公开招聘列表页：`[{"url":"https://careers.example.test/jobs"}]`。该域名仅演示格式，不是真实岗位。配置沿用报告程序的 `allowed_source_hosts`、`source_terms_accepted`，另外加上相同的招聘类型与城市。可设置 `discovery_url_contains: ["/jobs/"]` 筛选链接 URL，`discovery_max_links` 限制数量（1 至 300，默认 100）。URL 筛选不是语义岗位匹配。
 
@@ -34,7 +45,7 @@ python scripts/prepare_job_match.py discover --seeds seeds.json --config config.
 
 每个入口只读取一层链接，沿用域名范围、robots 检查、缓存、访问限制。跨域链接只在明确允许的域名内保留；官方招聘系统的其他域名必须事先列入范围。不登录、不绕验证码、不执行页面 JavaScript。动态页面可能无法提取，应人工提供可访问的具体 JD 或使用另行配置的采集能力。
 
-结果是待核对链接，不是“可投岗位”。保留获取时间、失败代码、数量是否截断；访问失败不解释为岗位关闭。当前没有接入通用搜索服务，也没有全网自动发现。
+结果是待核对链接，不是“可投岗位”。保留获取时间、失败代码、数量是否截断；访问失败不解释为岗位关闭。主动发现依赖执行时可用的搜索工具，程序本身不承诺穷尽全网。
 
 ## 3. 人工确认后导出
 
@@ -61,12 +72,12 @@ python scripts/prepare_job_match.py discover --seeds seeds.json --config config.
   "draft_sha256":"填入来源草稿的摘要",
   "human_confirmed":true,
   "sources":[
-    {"id":"所选链接的id","specific_jd_confirmed":true,"scope_confirmed":true,"source_tier":"employer_official"}
+    {"id":"所选链接的id","specific_jd_confirmed":true,"scope_confirmed":true,"direction_confirmed":true,"source_tier":"employer_official"}
   ]
 }
 ```
 
-`scope_confirmed` 表示人工已核对招聘类型、城市、校招季及届别与意向一致。现有报告模型会检查招聘类型和城市，但校招季、届别不能只靠该配置字段自动保证。来源等级沿用既有五档；聚合平台不能冒充企业官网。
+`scope_confirmed` 表示人工已核对招聘类型、城市、校招季及届别与意向一致。搜索结果携带方向时还必须设置 `direction_confirmed: true`；一层入口未携带方向时无此字段。现有报告模型会检查招聘类型和城市，但校招季、届别不能只靠该配置字段自动保证。来源等级沿用既有五档；聚合平台不能冒充企业官网。
 
 ```bash
 python scripts/prepare_job_match.py export --resume-draft resume-draft.json --resume-review resume-review.json --source-draft source-draft.json --source-review source-review.json --config config.json --output-dir prepared

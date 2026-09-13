@@ -17,12 +17,13 @@ from jobmatch_runtime.llm import ModelClient
 
 def runtime_fixture(target=1):
     config = {'employment_mode': 'campus_full_time', 'locations': ['杭州'],
+              'target_directions': ['财务分析'],
               'target_companies': target, 'limits': {'max_parallel_calls': 1},
               'llm': {'provider': 'synthetic_test_only', 'model': 'FakeModel'}}
     ledger = [{'id': 'E1', 'source_id': 'synthetic-resume', 'locator': '模拟第1页',
                'text': '模拟：2027 届毕业，已完成财务分析课程与数据分析项目。',
                'state': 'completed', 'confirmed': True}]
-    specs = [{'url': 'https://example.org/jobs/synthetic-1',
+    specs = [{'url': 'https://example.org/jobs/synthetic-1', 'target_direction': '财务分析',
               'source_tier': 'employer_official', 'company_key': 'synthetic-company'}]
     captured = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     source = {'url': specs[0]['url'], 'links': [specs[0]['url']],
@@ -95,6 +96,21 @@ class PipelineRuntimeTests(unittest.TestCase):
         return (json.loads(path.read_text()),
                 json.loads(path.with_name(path.stem + '-review.json').read_text()))
 
+    def test_explainable_rank_is_not_input_order_or_probability(self):
+        jobs = [
+            {'id': 'b', 'proposed_selection': True, 'priority': 'B', 'source_tier': 'employer_official',
+             'mappings': [{'evidence_refs': ['E1']}] * 5, 'requirements': []},
+            {'id': 'a2', 'proposed_selection': True, 'priority': 'A', 'source_tier': 'official_ats',
+             'mappings': [{'evidence_refs': ['E1']}] * 2,
+             'requirements': [{'required': False, 'result': 'unknown'}]},
+            {'id': 'a1', 'proposed_selection': True, 'priority': 'A', 'source_tier': 'employer_official',
+             'mappings': [{'evidence_refs': ['E1']}] * 3, 'requirements': []},
+        ]
+        pipeline._assign_ranks(jobs)
+        ordered = sorted(jobs, key=lambda job: job['rank_position'])
+        self.assertEqual([job['id'] for job in ordered], ['a1', 'a2', 'b'])
+        self.assertTrue(all('probability' not in job['rank_basis'] for job in jobs))
+
     @staticmethod
     def approve(review):
         for item in review['approvals']:
@@ -112,6 +128,9 @@ class PipelineRuntimeTests(unittest.TestCase):
         report, review = self.read_run(result)
         self.assertFalse(report['jobs'][0]['selected'])
         self.assertTrue(report['jobs'][0]['proposed_selection'])
+        self.assertEqual(report['jobs'][0]['rank_position'], 1)
+        self.assertEqual(report['jobs'][0]['target_direction'], '财务分析')
+        self.assertIn('direct_resume_mappings', report['jobs'][0]['rank_basis'])
         self.assertEqual(result['validation']['companies'], 0)
         draft = self.directory / result['report_file'].replace('.json', '.docx')
         self.assertTrue(draft.exists())

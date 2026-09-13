@@ -1,11 +1,11 @@
 {
   "verified_at": "2026-09-13",
-  "runtime_version": "0.1.0",
+  "runtime_version": "0.2.0",
   "scope": "Implementation and smoke tests, not a job-search effectiveness study. No private resume was used.",
   "automated_tests": {
     "legacy": 39,
-    "runtime": 163,
-    "total": 202,
+    "runtime": 168,
+    "total": 207,
     "status": "passed",
     "fixtures": "Synthetic records, local HTTP contracts, real temporary PDF/DOCX parsing; no effectiveness claim"
   },
@@ -160,7 +160,10 @@
       "bounded_one_level_link_discovery",
       "human_confirmation_bound_export",
       "five_dimension_readiness",
-      "explicit_optional_availability_degradation"
+      "explicit_optional_availability_degradation",
+      "confirmed_direction_search_planning",
+      "authorized_search_result_ingestion",
+      "explainable_ordinal_ranking"
     ],
     "not_implemented": [
       "general_web_search_provider",

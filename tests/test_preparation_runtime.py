@@ -20,7 +20,8 @@ class PreparationTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.resume = self.root / 'synthetic.txt'
         self.resume.write_text('Synthetic fixture, not a real candidate\nAccounting student, graduating 2027\nPlanned Excel course\n', encoding='utf-8')
-        self.intake = {'employment_mode': 'campus_full_time', 'locations': ['杭州'], 'recruitment_season': 'autumn'}
+        self.intake = {'employment_mode': 'campus_full_time', 'locations': ['杭州'],
+                       'target_directions': ['财务分析'], 'recruitment_season': 'autumn'}
 
     def review_resume(self, draft):
         return {'draft_sha256': draft['draft_sha256'], 'human_confirmed': True, 'intake_confirmed': True,
@@ -66,6 +67,49 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaises(AdapterError) as exc:
             prep.validate_intake({**self.intake, 'employment_mode': 'internship'})
         self.assertEqual(exc.exception.code, 'season_mode_conflict')
+
+    def test_search_plan_requires_confirmed_directions(self):
+        with self.assertRaises(AdapterError) as exc:
+            prep.build_search_plan({'employment_mode': 'campus_full_time', 'locations': ['杭州']})
+        self.assertEqual(exc.exception.code, 'directions_required')
+        plan = prep.build_search_plan({**self.intake, 'locations': ['杭州', '深圳']})
+        self.assertEqual(len(plan['queries']), 2)
+        self.assertEqual({q['direction'] for q in plan['queries']}, {'财务分析'})
+        self.assertTrue(all(q['location'] in q['query'] for q in plan['queries']))
+
+    def test_search_results_become_unverified_direction_bound_leads(self):
+        results = [
+            {'query_id': 'q-001', 'url': 'https://careers.example.test/jobs/1?utm_source=x',
+             'title': '模拟结果', 'snippet': '仅作测试'},
+            {'query_id': 'q-001', 'url': 'https://careers.example.test/jobs/1',
+             'title': '重复结果', 'snippet': '仅作测试'},
+        ]
+        draft = prep.import_search_results(results, self.intake)
+        self.assertEqual(len(draft['candidate_links']), 1)
+        self.assertEqual(draft['candidate_links'][0]['target_direction'], '财务分析')
+        self.assertEqual(draft['candidate_links'][0]['status'], 'unverified_link')
+        review = {'draft_sha256': draft['draft_sha256'], 'human_confirmed': True,
+                  'sources': [{'id': draft['candidate_links'][0]['id'],
+                               'specific_jd_confirmed': True, 'scope_confirmed': True,
+                               'direction_confirmed': True, 'source_tier': 'employer_official'}]}
+        specs = prep.confirm_sources(draft, review)
+        self.assertEqual(specs[0]['target_direction'], '财务分析')
+        bundle = prep.prepared_bundle({'preparation': {'reviewed': True}}, self.intake, specs, {})
+        self.assertEqual(bundle['config']['allowed_source_hosts'], ['careers.example.test'])
+
+    def test_cli_plan_and_search_result_import(self):
+        intake = self.root / 'intake.json'
+        intake.write_text(json.dumps(self.intake), encoding='utf-8')
+        plan = self.root / 'search-plan.json'
+        self.assertEqual(prepare_job_match.main(['plan', '--intake', str(intake), '--output', str(plan)]), 0)
+        self.assertEqual(json.loads(plan.read_text())['queries'][0]['id'], 'q-001')
+        results = self.root / 'results.json'
+        results.write_text(json.dumps([{'query_id': 'q-001',
+            'url': 'https://careers.example.test/jobs/2', 'title': '模拟', 'snippet': '测试'}]), encoding='utf-8')
+        draft = self.root / 'source-draft.json'
+        self.assertEqual(prepare_job_match.main(['search-results', '--results', str(results),
+            '--intake', str(intake), '--output', str(draft)]), 0)
+        self.assertEqual(json.loads(draft.read_text())['discovery_method'], 'authorized_web_search_results')
 
     def test_native_docx_reads_paragraph_and_table(self):
         from docx import Document
@@ -159,6 +203,14 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(draft['candidate_links'][0]['status'], 'unverified_link')
         self.assertNotIn('sources', draft)
 
+    def test_discovery_stops_before_fetch_when_direction_missing(self):
+        intake = {k: v for k, v in self.intake.items() if k != 'target_directions'}
+        with patch.object(prep.sources, 'fetch') as fetch:
+            with self.assertRaises(AdapterError) as exc:
+                prep.discover_links([{'url': 'https://careers.example.test/'}], intake, Cache(self.root / 'cache-missing'))
+        self.assertEqual(exc.exception.code, 'directions_required')
+        fetch.assert_not_called()
+
     def test_discovery_failure_is_visible_not_dead_link(self):
         with patch.object(prep.sources, 'fetch', side_effect=AdapterError('unsafe_url', 'reserved DNS')):
             draft = prep.discover_links([{'url': 'https://careers.example.test/'}], self.intake, Cache(self.root / 'cache'))
@@ -193,6 +245,7 @@ class PreparationTests(unittest.TestCase):
         for name in ('candidate', 'config', 'sources'):
             self.assertEqual(((output / (name + '.json')).stat().st_mode & 0o777), 0o600)
         self.assertEqual(json.loads((output / 'config.json').read_text())['employment_mode'], 'campus_full_time')
+        self.assertEqual(json.loads((output / 'config.json').read_text())['discovery_summary']['reviewed_source_links'], 1)
         self.assertEqual(prepare_job_match.main(args), 2)
 
 

@@ -298,13 +298,14 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
     selected = [job for job in data['jobs'] if job.get('selected')]
     proposed = [job for job in data['jobs'] if stage and data.get('runtime_version') is not None and not job.get('selected')
                 and job.get('proposed_selection') is True]
-    detailed = selected + proposed
+    detailed = sorted(selected + proposed, key=lambda job: (job.get('rank_position', 10**9), job['id']))
     paragraph('求职岗位与简历调整报告', 'Title')
     paragraph('阶段报告' if stage else '求职报告')
     paragraph('本报告由程序整理。资料检查不能代替逐项核实，排版仍需检查。')
     if data.get('synthetic') is True:
         paragraph('模拟测试数据，仅用于软件验证；不代表真实候选人或可投岗位。')
-    paragraph(f"招聘模式：{LABELS[data['employment_mode']]}；地区：{data['corpus']['geography']}")
+    directions = data['corpus'].get('target_directions', [])
+    paragraph(f"招聘模式：{LABELS[data['employment_mode']]}；方向：{' / '.join(directions) or '未单独设置'}；地区：{data['corpus']['geography']}")
     paragraph(f"生成时间：{(now or datetime.now(timezone.utc)).isoformat()}")
     paragraph(f"主清单：{checked['companies']} 家 / 目标 {checked['target']} 家；{len(selected)} 个岗位。")
     if proposed:
@@ -321,7 +322,7 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
     action_by_job = {a.get('job_id'): a for a in data.get('action_plan', []) if isinstance(a, dict)}
     if detailed:
         paragraph('优先准备的岗位（机器草稿仍须先复核）' if stage else '优先准备的岗位', 'Heading 2')
-        for job in sorted(detailed, key=lambda j: (j.get('priority') != 'A', j['id']))[:3]:
+        for job in detailed[:3]:
             action = action_by_job.get(job['id'], {})
             paragraph(f"{job['company']} · {job['title']}；简历版本：{action.get('resume_variant_id', '待整理')}")
             paragraph('下一步：' + str(action.get('action', '先核对来源与资格')))
@@ -336,6 +337,11 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
                          ('market_employer_count', '涉及雇主数量'), ('trend_claim_level', '分析适用范围')]:
         paragraph(f'{title}：{_display(basis[field])}')
     paragraph('这些资料只反映本次参考岗位的情况，不能代表整个招聘市场，也不能用于预测录用概率。')
+    coverage = data['corpus'].get('search_coverage', {})
+    if coverage:
+        paragraph(f"岗位发现：{coverage.get('method')}；发现线索 {coverage.get('candidate_links', 0)} 条；"
+                  f"人工选中具体来源 {coverage.get('reviewed_source_links', 0)} 条；"
+                  f"结果截断：{_display(coverage.get('truncated', False))}。")
     execution = data.get('execution', {})
     calls = execution.get('model_calls', [])
     if calls:
@@ -356,7 +362,12 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
         if not job.get('selected'):
             paragraph('机器分析草稿／未确认可投。以下是待人工复核的分析，不是投递推荐。')
         row = corpus[job['corpus_id']]
-        paragraph(f"编号：{job['id']}；优先级：{job['priority']}；地点：{' / '.join(row['locations'])}")
+        paragraph(f"编号：{job['id']}；投递顺序：第 {job.get('rank_position', '待排')} 位；优先级：{job['priority']}；方向：{job.get('target_direction', '未单独归类')}；地点：{' / '.join(row['locations'])}")
+        basis = job.get('rank_basis', {})
+        if basis:
+            paragraph(f"排序依据：有材料支持的对应 {basis.get('direct_resume_mappings', 0)} 项；"
+                      f"未解决加分项 {basis.get('unresolved_preferred_conditions', 0)} 项；"
+                      f"来源：{_display(basis.get('source_tier'))}。该顺序不是面试或录用概率。")
         paragraph(f"招聘状态：{_display(job['status'])}；申请条件：{_display(job['eligibility'])}；核查时间：{job['checked_at']}")
         paragraph(f"信息来源：{_display(job['source_tier'])}；在招依据：{job['open_evidence']}")
         link(paragraph(''), '具体 JD', job['jd_url'])

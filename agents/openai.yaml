@@ -1,4 +1,4 @@
 interface:
   display_name: "社科岗位匹配与分析"
-  short_description: "区分实习与全职，查找20家公司岗位，并按招聘要求提供简历修改建议"
-  default_prompt: "Use $social-science-job-match to confirm my employment mode, check current job listings against my resume, and prepare a report with suitable roles, source links, and job-specific resume revisions."
+  short_description: "按简历、方向和城市找20家岗位，排定投递优先级并逐岗修改简历"
+  default_prompt: "Use $social-science-job-match to confirm my employment mode, target directions and locations, actively discover and verify suitable current job listings, rank them by explainable fit, and prepare job-specific resume revisions."

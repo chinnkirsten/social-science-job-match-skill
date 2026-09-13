@@ -20,6 +20,37 @@ from .llm import ModelClient
 MODES = {'internship', 'campus_full_time', 'experienced_full_time'}
 
 
+def _assign_ranks(jobs):
+    """Assign an explainable ordinal order. This is not a probability or calibrated score."""
+    tier_order = {'employer_official': 0, 'official_ats': 1, 'employer_verified_platform': 2,
+                  'official_repost': 3, 'aggregator': 4}
+    eligible = []
+    for job in jobs:
+        if not (job.get('selected') or job.get('proposed_selection')):
+            continue
+        direct = sum(1 for item in job.get('mappings', [])
+                     if isinstance(item, dict) and item.get('evidence_refs'))
+        unresolved = sum(1 for item in job.get('requirements', [])
+                         if not item.get('required') and item.get('result') != 'met')
+        job['rank_basis'] = {
+            'priority_band': job.get('priority', 'B'),
+            'direct_resume_mappings': direct,
+            'unresolved_preferred_conditions': unresolved,
+            'source_tier': job.get('source_tier'),
+            'ordering_rule': '先比较A/B档，再比较有材料支持的职责对应数、未解决加分项和来源层级。'
+        }
+        eligible.append(job)
+    eligible.sort(key=lambda job: (
+        job.get('priority') != 'A',
+        -job['rank_basis']['direct_resume_mappings'],
+        job['rank_basis']['unresolved_preferred_conditions'],
+        tier_order.get(job.get('source_tier'), 9),
+        job['id'],
+    ))
+    for position, job in enumerate(eligible, 1):
+        job['rank_position'] = position
+
+
 def _consolidate_variants(report, model):
     variants = report['resume_variants']
     by_name = {}
@@ -57,6 +88,10 @@ def _configuration(config, ledger, specs):
     cities = config.get('locations')
     if not isinstance(cities, list) or not cities or not all(isinstance(c, str) and c.strip() for c in cities):
         raise AdapterError('cities_required', 'Specify normalized target locations')
+    directions = config.get('target_directions', [])
+    if directions and (not isinstance(directions, list) or not 1 <= len(directions) <= 5
+                       or not all(isinstance(v, str) and v.strip() for v in directions)):
+        raise AdapterError('invalid_directions', 'target_directions must contain one to five nonempty strings')
     _, errors = ledger_check(ledger)
     if errors:
         raise AdapterError('invalid_ledger', 'Candidate evidence ledger is invalid; confirmation must come from user input')
@@ -135,7 +170,8 @@ def _one(spec, config, ledger, cache, model, loader):
     captured = loader(spec, config, cache, force=config.get('refresh_sources') is True)
     source = {'url': captured['url'], 'text': captured['text'], 'links': captured.get('links', [])}
     extracted = model.call('SourceScout', prompts.SCOUT, {'profile': {'employment_mode': config['employment_mode'],
-                            'locations': config['locations']}, 'source': source})
+                            'locations': config['locations'],
+                            'target_directions': config.get('target_directions', [])}, 'source': source})
     mode = extracted.get('employment_mode')
     if mode not in MODES or mode != config['employment_mode']:
         return {'excluded': True, 'reason': '招聘模式不符或未确认', 'source_id': fingerprint(spec['url'])[:16]}
@@ -209,10 +245,12 @@ def _one(spec, config, ledger, cache, model, loader):
         if rewrite.get('use_status') not in ('verify_first', 'create_first'):
             rewrite['use_status'] = 'verify_first'
         rewrite['fidelity_reviewed'] = False
+    priority = mapped.get('priority') if mapped.get('priority') in ('A', 'B') else 'B'
     job = {'id': ident, 'corpus_id': ident, 'company_key': record['company_key'], 'company': company,
            'title': title, 'employment_mode': mode, 'entity_type': spec.get('entity_type', 'company'),
+           'target_direction': spec.get('target_direction', '未单独归类'),
            'selected': False, 'proposed_selection': selectable, 'status': status, 'eligibility': eligibility,
-           'priority': mapped.get('priority', 'B') if selectable else '', 'source_tier': spec['source_tier'],
+           'priority': priority if selectable else '', 'source_tier': spec['source_tier'],
            'jd_url': spec['url'], 'apply_url': apply_url, 'checked_at': captured['captured_at'],
            'open_evidence': evidence, 'hard_requirements_reviewed': False, 'requirements': merged,
            'mappings': mapped.get('mappings', []), 'rewrites': rewrites, 'details': extracted.get('details', {}),
@@ -301,8 +339,11 @@ def _run(config, ledger, specs, directory, *, model=None, loader=None):
             records.append(record)
         if item.get('job'):
             jobs.append(item['job'])
-    corpus = {'method_version': '3.0', 'employment_mode': config['employment_mode'], 'locations': config['locations'],
+    _assign_ranks(jobs)
+    corpus = {'method_version': '3.1', 'employment_mode': config['employment_mode'], 'locations': config['locations'],
+              'target_directions': config.get('target_directions', []),
               'geography': '/'.join(config['locations']), 'collected_at': utcnow(), 'candidate_pool_count': len(specs),
+              'search_coverage': config.get('discovery_summary', {}),
               'candidate_evidence': ledger, 'taxonomies': [], 'records': records}
     summary = build(corpus)
     report = {'runtime_version': __version__, 'target_companies': config.get('target_companies', 20),

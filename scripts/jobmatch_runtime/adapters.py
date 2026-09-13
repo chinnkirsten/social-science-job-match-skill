@@ -3,7 +3,7 @@ import importlib.util
 import json
 import time
 from pathlib import Path
-from . import adapters_data, adapters_services
+from . import __version__, adapters_data, adapters_services
 from .common import AdapterError, utcnow
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -81,4 +81,4 @@ def doctor(config=None):
             prerequisite = 'configured, provisioned upstream service with models/session/data'
         rows.append({'id': ident, 'implementation': 'adapter_implemented', 'enabled': cfg.get('enabled') is True,
                      'configuration_present': ready, 'prerequisite': prerequisite, 'live_verified': False})
-    return {'runtime': '0.1.0', 'components': rows, 'note': 'Doctor inspects configuration; it does not certify service or model readiness.'}
+    return {'runtime': __version__, 'components': rows, 'note': 'Doctor inspects configuration; it does not certify service or model readiness.'}

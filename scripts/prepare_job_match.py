@@ -14,6 +14,14 @@ def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8'))
 
 
+def private_destination(path):
+    target = Path(path).resolve()
+    public_root = Path(__file__).resolve().parents[1]
+    if target == public_root or public_root in target.parents:
+        raise AdapterError('private_output_location', 'Preparation data must remain outside the public Skill directory')
+    return target
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -33,6 +41,12 @@ def main(argv=None):
         export.add_argument('--' + name, required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == 'export':
+            private_destination(args.output_dir)
+        else:
+            private_destination(args.output)
+        if args.command == 'discover':
+            private_destination(args.cache_dir)
         if args.command == 'resume':
             result = prepare_resume(args.resume, read(args.intake), read(args.config) if args.config else {},
                                     use_model=args.use_model)

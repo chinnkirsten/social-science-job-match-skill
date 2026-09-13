@@ -4,8 +4,8 @@
   "scope": "Implementation and smoke tests, not a job-search effectiveness study. No private resume was used.",
   "automated_tests": {
     "legacy": 39,
-    "runtime": 161,
-    "total": 200,
+    "runtime": 163,
+    "total": 202,
     "status": "passed",
     "fixtures": "Synthetic records, local HTTP contracts, real temporary PDF/DOCX parsing; no effectiveness claim"
   },

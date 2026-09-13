@@ -22,6 +22,8 @@ python scripts/prepare_job_match.py resume --resume resume.pdf --intake intake.j
 
 输出全部是待确认记录，尚无可直接交给报告程序的 `candidate_evidence` 字段。草稿可能含简历个人信息，只保存在私有工作目录，不上传 GitHub。
 
+准备入口会拒绝将草稿、导出结果或缓存写进公开 Skill 目录，须选择仓库外的私有位置。该检查覆盖路径解析后的目标，不只是文件夹名称。
+
 ## 2. 指定招聘入口，发现待核对链接
 
 `seeds.json` 是 1 至 10 个获准访问的公开招聘列表页：`[{"url":"https://careers.example.test/jobs"}]`。该域名仅演示格式，不是真实岗位。配置沿用报告程序的 `allowed_source_hosts`、`source_terms_accepted`，另外加上相同的招聘类型与城市。可设置 `discovery_url_contains: ["/jobs/"]` 筛选链接 URL，`discovery_max_links` 限制数量（1 至 300，默认 100）。URL 筛选不是语义岗位匹配。

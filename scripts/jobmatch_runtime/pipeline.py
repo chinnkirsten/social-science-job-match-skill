@@ -7,7 +7,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from urllib.parse import urlsplit
 from build_evidence_basis import build
 from evidence_core import ledger_check, ref_errors, digest, canonical_url
 from validate_jobs import validate
@@ -166,12 +165,20 @@ def _bind_payload(template, context):
     return template
 
 
-def _one(spec, config, ledger, cache, model, loader):
+def _one(spec, config, ledger, cache, model, loader, *, reuse_extraction=False):
     captured = loader(spec, config, cache, force=config.get('refresh_sources') is True)
     source = {'url': captured['url'], 'text': captured['text'], 'links': captured.get('links', [])}
-    extracted = model.call('SourceScout', prompts.SCOUT, {'profile': {'employment_mode': config['employment_mode'],
-                            'locations': config['locations'],
-                            'target_directions': config.get('target_directions', [])}, 'source': source})
+    scout_input = {'profile': {'employment_mode': config['employment_mode'],
+                   'locations': config['locations'],
+                   'target_directions': config.get('target_directions', [])}, 'source': source}
+    # Reuse only public extraction on failed-job retries, never a candidate judgment.
+    scout_key = cache.key('SourceScout', prompts.VERSION, {
+        'instruction': prompts.SCOUT, 'input': scout_input, 'llm': config.get('llm', {}),
+        'captured_at': captured['captured_at']})
+    extracted = cache.get(scout_key) if reuse_extraction and not config.get('refresh_sources') else None
+    scout_hit = extracted is not None
+    if not scout_hit:
+        extracted = model.call('SourceScout', prompts.SCOUT, scout_input)
     mode = extracted.get('employment_mode')
     if mode not in MODES or mode != config['employment_mode']:
         return {'excluded': True, 'reason': '招聘模式不符或未确认', 'source_id': fingerprint(spec['url'])[:16]}
@@ -197,6 +204,8 @@ def _one(spec, config, ledger, cache, model, loader):
         raise AdapterError('invalid_extraction', 'Invalid vacancy state')
     if status == 'open' and (not isinstance(evidence, str) or not evidence.strip() or evidence not in source['text']):
         raise AdapterError('unsupported_openness', 'Openness needs an exact captured source excerpt')
+    if not scout_hit:
+        cache.put(scout_key, extracted, ttl=3600)
     ident = fingerprint(canonical_url(spec['url']))[:20]
     record = {'corpus_id': ident, 'company_key': spec.get('company_key', re.sub(r'\s+', '', company.casefold())),
               'company': company, 'title': title, 'employment_mode': mode, 'locations': cities,
@@ -256,6 +265,7 @@ def _one(spec, config, ledger, cache, model, loader):
            'mappings': mapped.get('mappings', []), 'rewrites': rewrites, 'details': extracted.get('details', {}),
            'reason': '机器分析通过，待人工读源复核' if selectable else '；'.join(map(str, audit['issues'])) or mapped.get('reason') or '条件或申请路径未确认'}
     return {'record': record, 'job': job, 'model_audit': audit, 'variant': mapped.get('resume_variant'), 'warnings': warnings,
+            'extraction_cache_hit': scout_hit,
             'action': mapped.get('action'), 'adapters': [{k: e[k] for k in ('component_id', 'upstream_version', 'invoked_at', 'cache_hit')} for e in enrichments]}
 
 
@@ -314,7 +324,9 @@ def _run(config, ledger, specs, directory, *, model=None, loader=None):
     def process(pair):
         key, spec = pair
         try:
-            return key, {'status': 'complete', 'completed_at': utcnow(), 'result': _one(spec, config, ledger, cache, model, loader)}
+            return key, {'status': 'complete', 'completed_at': utcnow(), 'result': _one(
+                spec, config, ledger, cache, model, loader,
+                reuse_extraction=state['jobs'].get(key, {}).get('status') == 'error')}
         except AdapterError as exc:
             return key, {'status': 'error', 'error_code': exc.code}
         except (ValueError, TypeError, KeyError, AttributeError):
@@ -352,6 +364,8 @@ def _run(config, ledger, specs, directory, *, model=None, loader=None):
               'report_summary': f'机器分析草稿。读取来源 {len(specs)} 项；生成岗位分析 {len(jobs)} 项。尚未人工核验，已确认可投为 0 家。',
               'resume_variants': [], 'action_plan': [], 'execution': {'model_calls': model.calls,
               'cache': cache.stats(), 'resumed_jobs': len(specs)-len(pending), 'fresh_jobs': len(pending),
+              'reused_extractions': sum(state['jobs'][key].get('result', {}).get('extraction_cache_hit', False)
+                                        for key, _ in pending),
               'adapters': [a for item in completed for a in item.get('adapters', [])],
               'warnings': [w for item in completed for w in item.get('warnings', [])]}}
     for item in completed:

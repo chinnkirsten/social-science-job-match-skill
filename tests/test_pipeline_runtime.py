@@ -171,6 +171,71 @@ class PipelineRuntimeTests(unittest.TestCase):
                 pipeline.run(config, ledger, self.specs, self.directory, model=FakeModel())
             self.assertEqual(raised.exception.code, 'resume_mismatch')
 
+    def test_failed_retry_reuses_public_extraction_without_reducing_detail(self):
+        def fail_mapper(role, value, payload):
+            if role == 'EvidenceMapper':
+                raise AdapterError('network_error', 'Synthetic interruption')
+        self.assertIn('network_error', self.execute(FakeModel(fail_mapper))['failures'])
+        retried = self.execute()
+        report, _ = self.read_run(retried)
+        self.assertEqual([c['role'] for c in self.model.calls], ['EvidenceMapper', 'Auditor'])
+        self.assertEqual(retried['execution']['reused_extractions'], 1)
+        self.assertEqual(report['jobs'][0]['checked_at'], self.source['captured_at'])
+        self.assertFalse(report['jobs'][0]['selected'])
+        self.directory = self.root / 'fresh-comparison'
+        fresh, _ = self.read_run(self.execute())
+        self.assertEqual(report['jobs'], fresh['jobs'])
+        self.assertEqual(report['resume_variants'], fresh['resume_variants'])
+        self.assertEqual(report['action_plan'], fresh['action_plan'])
+        self.assertEqual(len(report['jobs'][0]['mappings']), 3)
+        self.assertEqual(len(report['jobs'][0]['rewrites']), 2)
+
+    def test_extraction_retry_cache_expiry_changes_and_force_refresh(self):
+        for change in ('text', 'links', 'capture', 'prompt', 'expiry', 'corruption', 'force'):
+            with self.subTest(change=change):
+                self.directory = self.root / change
+                self.config, self.ledger, self.specs, self.source = runtime_fixture()
+                self.config['refresh_sources'] = change == 'force'
+                def fail_mapper(role, value, payload):
+                    if role == 'EvidenceMapper':
+                        raise AdapterError('network_error', 'Synthetic interruption')
+                self.execute(FakeModel(fail_mapper))
+                if change == 'text':
+                    self.source['text'] += '模拟：补充公告。'
+                elif change == 'links':
+                    self.source['links'].append('https://example.org/updated-application')
+                elif change == 'capture':
+                    self.source['captured_at'] = datetime.now(timezone.utc).isoformat()
+                elif change in ('expiry', 'corruption'):
+                    for path in (self.directory / 'cache').glob('*.json'):
+                        item = json.loads(path.read_text())
+                        if change == 'expiry':
+                            item['expires_at'] = 0
+                        else:
+                            item['value_sha256'] = '0' * 64
+                        path.write_text(json.dumps(item))
+                instruction = pipeline.prompts.SCOUT + ('\nChanged instruction.' if change == 'prompt' else '')
+                with patch.object(pipeline.prompts, 'SCOUT', instruction):
+                    result = self.execute()
+                self.assertEqual([c['role'] for c in self.model.calls], ['SourceScout', 'EvidenceMapper', 'Auditor'])
+                self.assertEqual(result['execution']['reused_extractions'], 0)
+
+    def test_cached_extraction_is_revalidated_and_contains_no_candidate_material(self):
+        def fail_mapper(role, value, payload):
+            if role == 'EvidenceMapper':
+                raise AdapterError('network_error', 'Synthetic interruption')
+        self.execute(FakeModel(fail_mapper))
+        for path in (self.directory / 'cache').glob('*.json'):
+            item = json.loads(path.read_text())
+            self.assertFalse(item['private'])
+            self.assertNotIn(self.ledger[0]['text'], path.read_text())
+            item['value']['open_evidence'] = 'Unsupported cached excerpt'
+            item['value_sha256'] = fingerprint(item['value'])
+            path.write_text(json.dumps(item))
+        result = self.execute()
+        self.assertIn('unsupported_openness', result['failures'])
+        self.assertFalse(list(self.directory.glob('*.docx')))
+
     def test_capture_timestamp_cannot_be_rewritten_by_model_or_checkpoint(self):
         def forge(role, value, payload):
             value.update(captured_at='2099-01-01T00:00:00+00:00',

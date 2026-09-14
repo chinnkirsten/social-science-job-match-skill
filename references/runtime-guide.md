@@ -252,7 +252,7 @@ python scripts/run_job_match.py run --config ../jobmatch-private/config.json --c
 运行目录包括：
 
 - `checkpoint.json`：请求指纹、每项结果、状态与完成时间。
-- `cache/`：可过期的抓取与适配器缓存。
+- `cache/`：可过期的抓取、公开JD提取与适配器缓存。
 - `report-001.json`：机器分析、岗位资料、经历记录、版本和行动方案。
 - `report-001-review.json`：默认全部未批准的人工复核模板。
 - `report-001.docx`：资料完整性满足要求时生成的机器分析阶段稿。
@@ -687,6 +687,10 @@ python scripts/run_job_match.py adapter tgre_classification --input ../jobmatch-
 默认时间：公开来源 3600 秒，最多 24 小时；robots 3600 秒；适配器结果默认 24 小时、最多 7 天。Compass、Resume Matcher 和 ESCO 抽取任务不使用结果缓存，避免会话或任务被错误重放。私有适配器结果仅在主流水线 `cache_candidate_data: true` 时允许缓存，独立 `adapter --cache-dir` 默认不启用私有缓存。
 
 同样的配置、经历记录、来源和提示版本，可以重用相同 `--output-dir` 恢复未完成工作。已完成项只有在原采集时间不足 24 小时时才恢复；过期或失败项重试。请求指纹改变时拒绝复用旧目录，使用新的运行目录。`refresh_sources: true` 会重新抓取，但配置本身改变也会改变指纹，因此切换该值时应使用新目录。
+
+失败岗位重试时，SourceScout的公开提取可在同目录内复用1小时。键同时绑定完整正文、链接、采集时间、画像、模型配置、提示版本及指令；命中仍通过相同的原文与字段检查，再执行个人匹配和独立复核。首次运行、完整检查点过期或强制刷新不走这条捷径。它复用现有Cache，不新增依赖，也不跨候选人共享私人结论。
+
+`execution.reused_extractions`只计本次实际复用的提取数，完整检查点恢复数另见`resumed_jobs`，真实请求另见`model_calls`。命中不续期、不改采集时间；不把缓存命中称为刚运行过模型。完整岗位断点可跳过逐岗模型请求，但超过3套简历版本时仍可能触发上文说明的批次分组请求。
 
 检查点与报告本身一直含有候选人经历记录和分析结果。`cache_candidate_data: false` 只关闭额外私有缓存，不等于不写盘、不保存简历信息或已经加密。运行目录权限为 0700，JSON 采用私有临时文件原子写入；权限控制不是磁盘加密，也不能阻止管理员、备份软件或共享账号读取。按实际数据授权范围配置磁盘、备份与保留策略。
 

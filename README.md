@@ -59,4 +59,4 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 `build_evidence_basis.py`仍只做本地岗位资料汇总；联网入口在 `run_job_match.py`。`doctor`只检查配置，不调用服务或认证模型。可选SDK的固定版本安装入口是 `scripts/install_optional.py`，默认仅预览安装计划。第三方许可证与归属说明见 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
 
-Word正文12pt、表格10.5pt，白底无填充色，含逐岗JD、条件对照、改写位置、经历编号、简历版本和行动计划。文件写出后返回 `render_pending`，仍须逐页渲染检查；未复核岗位不能计入20家正式报告。仓库只包含代码与合成测试，不含个人简历或求职报告。
+Word正文12pt、表格10.5pt，白底无填充色。每个岗位固定呈现至少3组“JD要求与出处—简历事实—差距—修改动作”、至少2条带位置和状态的事实性简历句，以及本岗简历版本、材料和申请动作；不能退化为几条通用原则。文件写出后返回 `render_pending`，仍须逐页渲染检查；未复核岗位不能计入20家正式报告。仓库只包含代码与合成测试，不含个人简历或求职报告。

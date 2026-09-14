@@ -29,6 +29,7 @@ class ReportLanguageTests(unittest.TestCase):
         original = copy.deepcopy(data)
         text = self.export(data)
         for label in ('经历记录与材料出处', '相关经历', '材料出处', '在招依据',
+                      '要求与经历对照', '可直接使用的事实性改写', '材料与申请动作',
                       '经历记录数量：1', '符合已知必需条件', '已完成；已确认：是'):
             self.assertIn(label, text)
         for label in ('证据账本', '证据定位', '候选人证据：', '开放证据：',

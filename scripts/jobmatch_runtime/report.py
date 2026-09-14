@@ -98,6 +98,8 @@ def _extensions(data, stage=False):
         job_id, variant_id = item.get('job_id'), item.get('resume_variant_id')
         if not isinstance(job_id, str) or job_id not in selected:
             errors.append(prefix + ' job_id must identify a selected job')
+        elif job_id in covered:
+            errors.append(prefix + ' duplicates an existing action for this job')
         else:
             covered.add(job_id)
         if not _filled(item.get('action')) or not _strings(item.get('materials')):
@@ -390,16 +392,24 @@ def render_report(data: dict, output: Path, now=None, stage=False) -> dict:
             paragraph('JD 原文：' + requirement['jd_evidence'])
             paragraph('相关经历：' + requirement['candidate_evidence'])
             paragraph(refs(requirement.get('evidence_refs', [])) or '尚未找到已确认的相关经历。')
-        paragraph('逐项要求对照', 'Heading 3')
-        for mapping in job['mappings']:
-            table(['项目', '具体说明'], [('岗位要求', mapping['requirement']), ('相关经历', mapping['resume_evidence']),
+        paragraph('要求与经历对照', 'Heading 3')
+        for mapping_index, mapping in enumerate(job['mappings'], 1):
+            paragraph(f'{mapping_index}. 逐项对照', 'Heading 3')
+            table(['项目', '具体说明'], [('JD要求', mapping['requirement']), ('招聘原文', mapping['jd_evidence']),
+                  ('简历事实', mapping['resume_evidence']),
                   ('材料出处', refs(mapping.get('evidence_refs', [])) or '尚无对应经历记录'),
-                  ('待补充之处', mapping['gap']), ('修改建议', mapping['action'])])
-        paragraph('简历改写示例与放置位置', 'Heading 3')
-        for rewrite in job['rewrites']:
-            paragraph(f"位置：{rewrite['placement']}；使用状态：{LABELS[rewrite['use_status']]}")
+                  ('差距', mapping['gap']), ('修改动作', mapping['action'])])
+        paragraph('可直接使用的事实性改写', 'Heading 3')
+        for rewrite_index, rewrite in enumerate(job['rewrites'], 1):
+            paragraph(f"{rewrite_index}. 放置位置：{rewrite['placement']}；使用状态：{LABELS[rewrite['use_status']]}")
             paragraph(rewrite['text'])
             paragraph(refs(rewrite['evidence_refs']))
+        paragraph('材料与申请动作', 'Heading 3')
+        action = action_by_job.get(job['id'], {})
+        paragraph('简历版本：' + str(action.get('resume_variant_id', '待整理')))
+        paragraph('配套材料：' + '；'.join(action.get('materials', []) if _strings(action.get('materials')) else ['待确认']))
+        paragraph('下一步：' + str(action.get('action', '先核对来源、资格与材料要求')))
+        paragraph('准备量：' + str(action.get('effort_estimate', '未估计，需根据材料缺口确认')))
         paragraph(f"岗位资料编号：{row['corpus_id']}；采集时间：{row['captured_at']}；内容校验码（SHA256）：{row['source_sha256']}")
         paragraph('招聘原文', 'Heading 3')
         paragraph(row['source_text'])

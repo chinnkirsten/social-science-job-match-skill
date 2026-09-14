@@ -73,6 +73,10 @@ class WordReportTests(unittest.TestCase):
             text = ''.join(root.itertext())
             self.assertIn('模拟测试数据', text)
             self.assertIn('page 1, project 1', text)
+            self.assertIn('要求与经历对照', text)
+            self.assertIn('招聘原文', text)
+            self.assertIn('可直接使用的事实性改写', text)
+            self.assertIn('材料与申请动作', text)
             for index in range(20):
                 for mapping in data['jobs'][index]['mappings']:
                     self.assertIn(mapping['requirement'], text)

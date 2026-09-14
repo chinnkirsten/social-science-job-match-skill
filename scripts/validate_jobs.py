@@ -245,7 +245,7 @@ def validate(data, now=None):
             except (ValueError, TypeError, AttributeError):
                 fail('closes_at must be ISO timestamp with timezone')
         for field, minimum, keys in (
-            ('mappings', 3, ('requirement', 'resume_evidence', 'gap', 'action')),
+            ('mappings', 3, ('requirement', 'jd_evidence', 'resume_evidence', 'gap', 'action')),
             ('rewrites', 2, ('text', 'placement', 'use_status')),
         ):
             items = job.get(field)

@@ -39,8 +39,8 @@ candidate_evidence_count由经历记录条数计算。改写、资格条件和�
 - checked_at：交付前24小时内实际核验开放状态的时刻；open_evidence：具体开放依据；apply_url或application_method：有来源的申请路径。可选closes_at须有时区依据，不编造具体截止时刻。
 - hard_requirements_reviewed：完整JD必需条件已读源检查。
 - requirements：text、required、result（met/unmet/unknown）、jd_evidence（可在岗位资料原文定位的摘录）、candidate_evidence（说明文字）、evidence_refs。met必须关联confirmed且completed/ongoing的经历记录。未知项允许空引用列表并明确未体现。
-- mappings：至少3项，每项含requirement、resume_evidence、evidence_refs、gap、action；没有对应经历时引用列表可空，说明缺口。
-- rewrites：至少2项，含text、placement、evidence_refs、use_status。ready必须引用已确认且已完成/进行中的事实，并设fidelity_reviewed=true表示已人工对照原文；verify_first和create_first不作为已完成经历。
+- mappings：至少3项，每项含requirement、jd_evidence、resume_evidence、evidence_refs、gap、action。jd_evidence是对应招聘原文中的可定位摘录；没有对应经历时引用列表可空，resume_evidence明确写“简历未体现”，并说明缺口。
+- rewrites：至少2项，含text、placement、evidence_refs、use_status。text是可以放入简历的完整事实句，不是修改指令。ready必须引用已确认且已完成/进行中的事实，并设fidelity_reviewed=true表示已人工对照原文；verify_first和create_first不作为已完成经历。
 - 未入选记录保存reason。未知必需条件不计入主清单。
 
 ## 统计口径
@@ -59,5 +59,7 @@ python3 -B -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 汇总输出只写入新文件，拒绝覆盖输入或已有结果。测试可使用--as-of指定带时区时刻；真实交付使用当前时间。退出0仅表示结构检查通过，退出1为数据错误，退出2为文件读写错误。检查不联网，也不证明雇主身份、原文真实性或改写语义。
+
+action_plan必须对每个入选岗位恰好提供一条记录，含该岗采用的简历版本、非空材料清单和下一步动作。Word必须把这条记录放回对应岗位详情；文末汇总不能代替逐岗呈现。
 
 数据通过后使用`run_job_match.py report`或经人工复核的`finalize`生成Word，再按report-standard.md核对内容、无底纹、可点击链接和逐页渲染。`evidence_ok`区分事实结构问题与公司数不足；只有数量不足可以使用阶段报告，不能绕过资料检查。自动生成成功返回`render_pending`，不代表视觉验收或真实求职效果实测。

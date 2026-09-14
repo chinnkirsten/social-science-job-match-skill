@@ -61,6 +61,7 @@ class FakeModel:
                                        'source_excerpt': requirement['source_excerpt'],
                                        'evidence_refs': ['E1']} for requirement in payload['jd']['requirements']],
                      'priority': 'A', 'mappings': [{'requirement': f'模拟条件{i}',
+                        'jd_evidence': '要求有数据分析经验。',
                         'resume_evidence': 'E1模拟经历', 'evidence_refs': ['E1'], 'gap': '待复核',
                         'action': '核对模拟原文'} for i in range(3)],
                      'rewrites': [{'text': f'模拟项目改写{i}：完成数据分析项目。',

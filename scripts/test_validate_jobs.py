@@ -21,7 +21,7 @@ def fixture():
         'requirements': [{'text': '模拟必需项', 'required': True, 'result': 'met',
                           'jd_evidence': '数据分析', 'candidate_evidence': 'E1模拟证据',
                           'evidence_refs': ['E1']}],
-        'mappings': [{'requirement': str(i), 'resume_evidence': 'E1',
+        'mappings': [{'requirement': str(i), 'jd_evidence': '数据分析', 'resume_evidence': 'E1',
                       'gap': '无', 'action': '模拟动作', 'evidence_refs': ['E1']} for i in range(3)],
         'rewrites': [{'text': f'模拟改写{i}', 'placement': '项目经历',
                       'evidence_refs': ['E1'], 'use_status': 'ready',
@@ -101,6 +101,10 @@ class GateTests(unittest.TestCase):
 
     def test_missing_fidelity_review_blocks_ready_rewrite(self):
         data = fixture(); del data['jobs'][0]['rewrites'][0]['fidelity_reviewed']
+        self.assertFalse(self.result(data)['ok'])
+
+    def test_mapping_requires_traceable_jd_excerpt(self):
+        data = fixture(); del data['jobs'][0]['mappings'][0]['jd_evidence']
         self.assertFalse(self.result(data)['ok'])
 
     def test_all_three_employment_modes(self):
